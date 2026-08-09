@@ -1111,3 +1111,110 @@ D. Endorsement Certified mở khóa dữ liệu
 - [OneLake RLS](https://learn.microsoft.com/en-us/fabric/onelake/security/row-level-security)
 - [OneLake SQL endpoint behavior](https://learn.microsoft.com/en-us/fabric/onelake/security/sql-analytics-endpoint-onelake-security)
 - [Fabric permission model](https://learn.microsoft.com/en-us/fabric/security/permission-model)
+
+---
+
+## 12. CÂU HỎI SCENARIO — SECURITY & GOVERNANCE
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D1-S1 — Least Privilege Cho Item Access
+
+**Người dùng chỉ cần xem một Lakehouse duy nhất, không cần truy cập bất kỳ item nào khác trong workspace. Quyền **tối thiểu** nào phù hợp nhất?**
+
+A. Contributor trên toàn workspace  
+B. Admin trên toàn workspace  
+C. Share item (Read) trực tiếp trên Lakehouse + gán OneLake role nếu cần giới hạn thêm  
+D. Domain Admin  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**C.** [Item sharing](https://learn.microsoft.com/en-us/fabric/get-started/share-items) cho phép cấp quyền **Read trên một item cụ thể** mà không cần cấp quyền workspace. Nếu cần giới hạn thêm đến folder/file cụ thể trong Lakehouse, có thể kết hợp với [OneLake security roles](https://learn.microsoft.com/en-us/fabric/onelake/security/create-manage-roles). Cấp Contributor toàn workspace sẽ vi phạm nguyên tắc **least privilege** và bypass toàn bộ OneLake RLS/CLS.
+
+</details>
+
+---
+
+### Câu D1-S2 — Bypass OneLake RLS
+
+**Một Contributor được thêm vào OneLake role chỉ cho phép đọc data có `Region = 'APAC'`, nhưng vẫn nhìn thấy toàn bộ dữ liệu bao gồm `EMEA` và `Americas`. Nguyên nhân hợp lý nhất là gì?**
+
+A. OneLake RLS có độ trễ 24 giờ  
+B. Contributor là elevated workspace role và **bypass OneLake RLS/CLS**  
+C. Sensitivity label bị cấu hình sai  
+D. KQL không hỗ trợ mệnh đề `where`  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [Elevated workspace roles](https://learn.microsoft.com/en-us/fabric/onelake/security/onelake-security-overview#workspace-roles-and-onelake-security) (Admin, Member, Contributor) **bypass toàn bộ OneLake granular security** bao gồm RLS, CLS và OLS. Để granular security có hiệu lực, người dùng phải ở Viewer role hoặc chỉ có item-level access (Read), không có workspace role elevated.
+
+</details>
+
+---
+
+### Câu D1-S3 — External Engine Và OneLake Security
+
+**Một external engine (không được authorized bởi Fabric) cố đọc table trong Lakehouse có cấu hình OneLake RLS. Kết quả mong đợi là gì?**
+
+A. Engine luôn đọc được raw Parquet files trực tiếp  
+B. Access **có thể bị block** — engine không thể tự thực thi policies vì không được Fabric authorize  
+C. Engine tự động downgrade thành Viewer role  
+D. Sensitivity label bị xoá khi engine kết nối  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [OneLake security](https://learn.microsoft.com/en-us/fabric/onelake/security/onelake-security-overview#supported-and-authorized-engines) chỉ được enforce bởi **supported và authorized engines**. External engine hoặc công cụ chưa được authorize không được giả định tự thực thi policies — Fabric có thể block access hoặc không enforce RLS đúng cách. Đây là lý do không thể dựa vào OneLake security cho engines ngoài hệ sinh thái Fabric.
+
+</details>
+
+---
+
+## 13. LAB THỰC HÀNH — SECURITY VALIDATION
+
+> Lab tự tạo để kiểm tra cách OneLake security và workspace role hoạt động thực tế.
+
+### Lab 10 — Kiểm Tra Phân Quyền OneLake
+
+**Mục tiêu:** Hiểu sự khác biệt giữa workspace role và OneLake role khi truy cập dữ liệu Lakehouse.
+
+**Thiết lập:**
+
+```text
+Bước 1: Tạo workspace "Security-Lab" với hai Lakehouse:
+  - lakehouse_sales   (chứa bảng fact_orders)
+  - lakehouse_payroll (chứa bảng payroll_data)
+
+Bước 2: Tạo 2 tài khoản test:
+  - User A: gán Contributor trên workspace
+  - User B: gán Viewer + OneLake role chỉ phạm vi thư mục "Sales"
+```
+
+**Kiểm tra User A (Contributor):**
+
+```python
+# User A đăng nhập và chạy notebook
+df_orders  = spark.read.table("lakehouse_sales.fact_orders")    # ✅ Có thể đọc
+df_payroll = spark.read.table("lakehouse_payroll.payroll_data") # ✅ Có thể đọc — bypass!
+
+# Kết luận: Contributor bypass OneLake security
+```
+
+**Kiểm tra User B (Viewer + OneLake role = Sales only):**
+
+```python
+# User B đăng nhập và cố đọc Payroll
+df_orders  = spark.read.table("lakehouse_sales.fact_orders")    # ✅ Được phép
+df_payroll = spark.read.table("lakehouse_payroll.payroll_data") # ❌ Bị block / lỗi permission
+```
+
+**Điểm cần ghi chép sau lab:**
+
+| Phương thức truy cập | User A (Contributor) | User B (Viewer + Role) |
+|---------------------|---------------------|----------------------|
+| Spark notebook | Tất cả data | Chỉ Sales data |
+| SQL analytics endpoint | Tất cả data | Chỉ Sales data |
+| OneLake shortcut | Tất cả data | Chỉ Sales data |
+
+> [!NOTE]
+> Enforcement và limitations có thể khác nhau giữa Spark, SQL endpoint, và shortcut path. Luôn kiểm tra theo từng access path riêng biệt. Tham khảo: [OneLake security per engine](https://learn.microsoft.com/en-us/fabric/onelake/security/onelake-security-overview)
+

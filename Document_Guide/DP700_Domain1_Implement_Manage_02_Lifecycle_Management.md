@@ -825,3 +825,59 @@ D. Không, nhưng chỉ khi deployment pipeline có 10 stages
 - [Git supported items/providers](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/intro-to-git-integration)
 - [Deployment pipelines](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/intro-to-deployment-pipelines)
 - [Fabric CI/CD best practices](https://learn.microsoft.com/en-us/fabric/fundamentals/understand-best-practices-fabric-cicd)
+
+---
+
+## 7. CÂU HỎI SCENARIO — LIFECYCLE MANAGEMENT
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D1-L1 — Quyền Kết Nối Git
+
+**Ai có quyền **tối thiểu** để kết nối (connect) workspace với Git repo lần đầu tiên?**
+
+A. Viewer  
+B. Contributor  
+C. Member  
+D. Admin  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**D.** [Chỉ workspace Admin](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#permissions) có quyền thực hiện thao tác initial connect, sync ban đầu, và disconnect workspace với Git. Sau khi đã kết nối, Contributor có đủ Fabric Write và Git permissions có thể commit/update các thay đổi tiếp theo.
+
+</details>
+
+---
+
+### Câu D1-L2 — Contributor Và Git Operations
+
+**Một Contributor có Write trên mọi item và có quyền Write trong Git repo. Workspace đã được Admin kết nối với Git trước đó. Contributor muốn cập nhật workspace từ branch Git mới nhất. Họ có thể làm điều này không?**
+
+A. Không — mọi Git operation đều yêu cầu Admin  
+B. Có — Contributor có đủ Fabric và Git permissions có thể thực hiện commit/update sau khi đã kết nối  
+C. Không — vì GitHub chỉ hỗ trợ Admin  
+D. Có — nhưng chỉ khi deployment pipeline có từ 10 stage trở lên  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** Sau khi Admin đã thiết lập kết nối, [Contributor có đủ quyền](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#permissions) (Write trên Fabric item + quyền Git repo) có thể **commit thay đổi lên Git** và **update workspace từ Git** mà không cần nâng lên Admin. Đây là điểm bẫy phổ biến — tách biệt initial connect với ongoing operations.
+
+</details>
+
+---
+
+### Câu D1-L3 — Deployment Pipeline Vs Git
+
+**Mục tiêu là promote nội dung từ Dev → Test → Prod và **đổi connection string** tự động theo từng môi trường. Giải pháp nào phù hợp nhất?**
+
+A. Chỉ dùng Git integration  
+B. Deployment pipeline + variable library hoặc deployment rules  
+C. OneLake shortcut  
+D. Monitoring Hub  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [Deployment pipeline](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/intro-to-deployment-pipelines) xử lý promotion giữa các stage (Dev → Test → Prod). [Variable library](https://learn.microsoft.com/en-us/fabric/cicd/variable-library/variable-library-overview) hoặc **deployment rules** cho phép thay đổi connection string, parameter và cấu hình theo từng môi trường mà không sửa code. Git integration quản lý version history nhưng không tự động promote và đổi environment values.
+
+</details>
+

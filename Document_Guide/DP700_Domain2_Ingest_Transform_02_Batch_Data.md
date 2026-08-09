@@ -1092,3 +1092,185 @@ D. KQL Queryset trên Warehouse
 - [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 - [OneLake shortcuts](https://learn.microsoft.com/en-us/fabric/onelake/onelake-shortcuts)
 - [Copy activity](https://learn.microsoft.com/en-us/fabric/data-factory/copy-data-activity)
+
+---
+
+## 12. CÂU HỎI SCENARIO — BATCH DATA
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D2-B1 — Chọn Data Store: Lakehouse
+
+**Dữ liệu đa định dạng (JSON, CSV, Parquet), cần xử lý bằng PySpark, hỗ trợ ML workflow, và tổ chức theo kiến trúc Medallion (Bronze/Silver/Gold). Store nào phù hợp nhất?**
+
+A. Lakehouse (Delta Lake trên OneLake)  
+B. Warehouse (T-SQL only)  
+C. Eventhouse (KQL only)  
+D. SQL Database (OLTP)  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Lakehouse](https://learn.microsoft.com/en-us/fabric/data-engineering/lakehouse-overview) là store duy nhất hỗ trợ đồng thời: multi-format files, Spark/PySpark processing, ML workflows, và kiến trúc Medallion. Delta Lake làm nền tảng cho cả Tables (có schema) lẫn Files (raw data).
+
+</details>
+
+---
+
+### Câu D2-B2 — Chọn Data Store: Warehouse
+
+**Cần lưu trữ relational star schema, hỗ trợ T-SQL đầy đủ (DDL, DML, stored procedures), và phục vụ BI reports với high concurrency. Store nào tối ưu?**
+
+A. Warehouse (Fabric)  
+B. Eventhouse  
+C. Notebook  
+D. Airflow pool  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Fabric Warehouse](https://learn.microsoft.com/en-us/fabric/data-warehouse/data-warehousing) tối ưu cho relational data, T-SQL analytics với full DDL/DML support, và phục vụ BI reports thông qua SQL analytics endpoint với high concurrency. Eventhouse dùng KQL, không T-SQL; Notebook là compute tool, không phải storage.
+
+</details>
+
+---
+
+### Câu D2-B3 — Zero-Copy Access
+
+**Dữ liệu đang lưu trong ADLS Gen2 và Amazon S3. Team cần truy cập để query bằng Spark, nhưng không được copy vào OneLake (chính sách cost và data residency). Giải pháp nào phù hợp?**
+
+A. OneLake shortcut (ADLS Gen2 và S3)  
+B. Copy data bằng pipeline mỗi giờ  
+C. Import model trong Power BI  
+D. Deployment pipeline  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [OneLake shortcuts](https://learn.microsoft.com/en-us/fabric/onelake/onelake-shortcuts) tạo virtual pointer tới external storage — **không copy dữ liệu**, truy cập theo passthrough authentication. Hỗ trợ ADLS Gen2, S3, GCS, Dataverse. Zero-copy = không tốn storage OneLake, tuân thủ data residency.
+
+</details>
+
+---
+
+### Câu D2-B4 — Transformation Phức Tạp
+
+**Dữ liệu JSON lớn cần: flatten nested arrays, dedup theo key, viết custom UDF, và schema evolution phức tạp. Transform tool nào phù hợp?**
+
+A. Notebook PySpark  
+B. Dataflow Gen2 vì low-code  
+C. Deployment pipeline  
+D. Sensitivity label  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Notebook PySpark](https://learn.microsoft.com/en-us/fabric/data-engineering/how-to-use-notebook) phù hợp cho distributed custom transformation: custom UDF, schema evolution phức tạp, nested data processing. Dataflow Gen2 có giới hạn với complex UDF và xử lý nested JSON quy mô lớn; deployment pipeline là orchestration tool, không phải transformation.
+
+</details>
+
+---
+
+### Câu D2-B5 — KQL Aggregation Trên Eventhouse
+
+**Dữ liệu telemetry time-series đang lưu trong Eventhouse. Cần tính average temperature theo 5 phút cho mỗi device. Language nào dùng?**
+
+A. KQL với `summarize` + `bin`  
+B. T-SQL MERGE vào Git  
+C. DAX only  
+D. M language trong deployment pipeline  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [KQL (Kusto Query Language)](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/kusto-query-language) là ngôn ngữ chính của Eventhouse. `summarize avg(Temperature) by bin(Timestamp, 5m), DeviceId` là cú pháp chuẩn cho time-series aggregation.
+
+</details>
+
+---
+
+## 13. LAB THỰC HÀNH — BATCH DATA
+
+### Lab 1 — Full Load Và Incremental MERGE
+
+**Mục tiêu:** Hiểu sự khác biệt giữa full load (overwrite) và incremental load (MERGE), và tính idempotent của MERGE.
+
+```python
+from pyspark.sql import functions as F
+from delta.tables import DeltaTable
+
+# ═══════════════════════════════════════════════════
+# PHẦN 1: Full Load — Tạo bảng ban đầu
+# ═══════════════════════════════════════════════════
+initial = spark.createDataFrame([
+    (1, "Pending",   10.0, "2026-08-01T10:00:00"),
+    (2, "Confirmed", 20.0, "2026-08-01T10:00:00"),
+], ["OrderId", "Status", "Amount", "ModifiedDate"])
+
+(initial
+ .withColumn("ModifiedDate", F.to_timestamp("ModifiedDate"))
+ .write.format("delta")
+ .mode("overwrite")        # Full load: xoá dữ liệu cũ, tạo Delta version mới
+ .saveAsTable("lab.orders"))
+
+# ═══════════════════════════════════════════════════
+# PHẦN 2: Incremental MERGE — Upsert thay đổi
+# ═══════════════════════════════════════════════════
+changes = spark.createDataFrame([
+    (2, "Shipped", 25.0, "2026-08-02T10:00:00"),   # OrderId=2 thay đổi Status và Amount
+    (3, "Pending", 30.0, "2026-08-02T10:00:00"),    # OrderId=3 mới
+], ["OrderId", "Status", "Amount", "ModifiedDate"]).withColumn(
+    "ModifiedDate", F.to_timestamp("ModifiedDate")
+)
+
+target = DeltaTable.forName(spark, "lab.orders")
+(target.alias("t")
+ .merge(changes.alias("s"), "t.OrderId = s.OrderId")
+ # Chỉ update nếu source mới hơn target (tránh revert bởi dữ liệu cũ)
+ .whenMatchedUpdateAll(condition="s.ModifiedDate >= t.ModifiedDate")
+ .whenNotMatchedInsertAll()
+ .execute())
+
+# Kiểm tra: rerun MERGE không tạo duplicate
+# Xem lịch sử: spark.sql("DESCRIBE HISTORY lab.orders").show()
+```
+
+**Điểm quan trọng:**
+- MERGE là **idempotent** — chạy lại cùng source sẽ cho kết quả giống nhau
+- Condition `s.ModifiedDate >= t.ModifiedDate` ngăn dữ liệu cũ ghi đè dữ liệu mới hơn
+
+---
+
+### Lab 6 — Warehouse T-SQL: Tạo Bảng Và Query
+
+**Mục tiêu:** Thực hành T-SQL trong Fabric Warehouse — tạo bảng fact, query với aggregation.
+
+```sql
+-- Bước 1: Tạo bảng fact trong Fabric Warehouse
+CREATE TABLE dbo.FactSales (
+    SalesId    BIGINT       NOT NULL,
+    OrderDate  DATE         NOT NULL,
+    CustomerId BIGINT       NOT NULL,
+    ProductId  BIGINT       NOT NULL,
+    Quantity   INT          NOT NULL,
+    Amount     DECIMAL(18,2) NOT NULL
+);
+
+-- Bước 2: Insert dữ liệu mẫu
+INSERT INTO dbo.FactSales VALUES
+  (1, '2026-08-01', 101, 201, 3, 150.00),
+  (2, '2026-08-01', 102, 202, 1,  50.00),
+  (3, '2026-08-02', 101, 201, 2, 100.00);
+
+-- Bước 3: Aggregation query — Revenue theo ngày và customer
+SELECT
+    OrderDate,
+    CustomerId,
+    SUM(Amount)   AS Revenue,
+    SUM(Quantity) AS TotalQty,
+    COUNT(*)      AS OrderCount
+FROM dbo.FactSales
+GROUP BY OrderDate, CustomerId
+ORDER BY OrderDate, Revenue DESC;
+
+-- Bước 4: Xem execution plan (không hỗ trợ EXPLAIN trong Warehouse, dùng Query Insights)
+```
+
+> [!NOTE]
+> Fabric Warehouse sử dụng distributed SQL engine. Tham khảo: [Fabric Warehouse overview](https://learn.microsoft.com/en-us/fabric/data-warehouse/data-warehousing)
+

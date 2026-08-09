@@ -788,3 +788,164 @@ D. VACUUM RETAIN 0 HOURS trước mỗi run
 - [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 - [Replace Delta tables](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-lake-replace)
 - [Structured Streaming overview](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview)
+
+---
+
+## 7. CÂU HỎI SCENARIO — LOADING PATTERNS
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D2-LP1 — Idempotent Incremental Load
+
+**Pipeline incremental bị lỗi sau khi thực hiện MERGE nhưng trước khi cập nhật watermark trong control table. Khi chạy lại, pipeline phải không tạo dữ liệu trùng. Thiết kế nào đảm bảo điều này?**
+
+A. Append trực tiếp vào target, không có dedup  
+B. Ghi dữ liệu mới vào staging table → dedup/MERGE vào target → **chỉ** cập nhật watermark sau khi MERGE thành công  
+C. Xoá toàn bộ Delta transaction log trước khi rerun  
+D. Chạy `VACUUM RETAIN 0 HOURS` trước mỗi lần chạy  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** Thiết kế **idempotent** (có thể rerun an toàn) yêu cầu:
+1. **Staging** — dữ liệu mới vào bảng staging riêng (tách khỏi target)
+2. **MERGE** — upsert từ staging vào target (MERGE tự nhiên là idempotent — cùng key sẽ update, không insert thêm)
+3. **Watermark commit cuối cùng** — chỉ update control table sau khi MERGE thành công
+
+Tham khảo: [Delta Lake MERGE](https://learn.microsoft.com/en-us/fabric/data-engineering/lakehouse-streaming-write)
+
+</details>
+
+---
+
+### Câu D2-LP2 — Full Snapshot Thay Thế
+
+**Nhận được một bản snapshot đầy đủ mới cần thay thế toàn bộ dữ liệu cũ, nhưng vẫn phải giữ table identity (tên bảng, schema) và lịch sử Delta để time travel vẫn hoạt động. Cách làm nào phù hợp?**
+
+A. DROP TABLE rồi CREATE TABLE mới  
+B. Dùng `CREATE OR REPLACE TABLE` hoặc PySpark `.mode("overwrite")` với Delta format  
+C. Chạy `VACUUM 0 HOURS` để reset  
+D. Xoá trực tiếp thư mục `_delta_log`  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [`CREATE OR REPLACE TABLE`](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-lake-replace) tạo **Delta version mới** — dữ liệu cũ bị thay thế nhưng **transaction log được giữ nguyên**, cho phép time travel đến các version trước (trong giới hạn retention). DROP TABLE mất hoàn toàn identity và history. Xoá `_delta_log` là thao tác nguy hiểm, không được hỗ trợ.
+
+</details>
+
+---
+
+### Câu D2-LP3 — Late-Arriving Dimension
+
+**Một fact record đến trước khi dimension record tương ứng có mặt trong bảng `dim_customer`. Foreign key `CustomerId` chưa tồn tại. Pattern dimensional loading nào phù hợp?**
+
+A. Bỏ fact record — chờ dimension đến mới load  
+B. Dùng **unknown member** (ví dụ: `CustomerId = -1` đại diện "Unknown") → sau khi dimension đến, thực hiện key correction  
+C. Cấp quyền Admin cho pipeline để tự tạo dimension  
+D. Tắt relationship giữa fact và dimension  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** Pattern **unknown member + late correction** là giải pháp chuẩn cho dimensional modeling:
+1. Load fact với surrogate key "Unknown" (-1 hoặc 0) thay vì bỏ record
+2. Khi dimension record đến, chạy **key correction** để cập nhật fact records liên quan
+
+Điều này đảm bảo fact records không bị mất và tính toàn vẹn referential được duy trì. Tham khảo: [Dimensional modeling best practices](https://learn.microsoft.com/en-us/fabric/data-warehouse/dimensional-modeling-overview)
+
+</details>
+
+---
+
+## 8. LAB THỰC HÀNH — SCD TYPE 2
+
+> Lab mô phỏng Slowly Changing Dimension Type 2 — pattern thường gặp trong đề thi DP-700.
+
+### Lab 2 — Xây Dựng SCD Type 2 Với Delta Lake
+
+**Mục tiêu:** Theo dõi lịch sử thay đổi của customer segment, mỗi thay đổi tạo ra một version mới trong bảng dimension.
+
+**Bước 1: Khởi tạo bảng dimension ban đầu**
+
+```python
+from pyspark.sql import functions as F
+from delta.tables import DeltaTable
+
+# Dữ liệu khởi tạo
+initial_data = spark.createDataFrame([
+    (101, "Alice", "Gold"),
+    (102, "Bob",   "Silver"),
+], ["CustomerId", "Name", "Segment"])
+
+# Thêm các cột SCD Type 2
+dim_initial = (
+    initial_data
+    .withColumn("EffectiveFrom", F.current_timestamp())
+    .withColumn("EffectiveTo",   F.lit(None).cast("timestamp"))
+    .withColumn("IsCurrent",     F.lit(True))
+)
+
+dim_initial.write.format("delta").mode("overwrite").saveAsTable("gold.dim_customer")
+
+# Kiểm tra
+spark.table("gold.dim_customer").show()
+```
+
+**Bước 2: Xử lý thay đổi (Alice đổi từ Gold → Platinum)**
+
+```python
+from pyspark.sql import functions as F
+from delta.tables import DeltaTable
+import datetime
+
+# Dữ liệu thay đổi mới
+changes = spark.createDataFrame([
+    (101, "Alice", "Platinum"),   # CustomerId 101 đổi Segment
+], ["CustomerId", "Name", "Segment"])
+
+now = F.current_timestamp()
+target = DeltaTable.forName(spark, "gold.dim_customer")
+
+# Bước 2a: Expire row cũ (set IsCurrent=False, EffectiveTo=now) cho các CustomerId thay đổi
+(target.alias("t")
+ .merge(
+     changes.alias("s"),
+     "t.CustomerId = s.CustomerId AND t.IsCurrent = true AND t.Segment != s.Segment"
+ )
+ .whenMatchedUpdate(set={
+     "IsCurrent":   F.lit(False),
+     "EffectiveTo": now,
+ })
+ .execute())
+
+# Bước 2b: Insert version mới
+new_rows = (
+    changes
+    .withColumn("EffectiveFrom", now)
+    .withColumn("EffectiveTo",   F.lit(None).cast("timestamp"))
+    .withColumn("IsCurrent",     F.lit(True))
+)
+new_rows.write.format("delta").mode("append").saveAsTable("gold.dim_customer")
+```
+
+**Bước 3: Kiểm tra kết quả**
+
+```python
+spark.table("gold.dim_customer").orderBy("CustomerId", "EffectiveFrom").show(truncate=False)
+# Kết quả mong đợi cho Alice (CustomerId=101):
+#   Row 1: Gold,     EffectiveFrom=T0, EffectiveTo=T1, IsCurrent=False
+#   Row 2: Platinum, EffectiveFrom=T1, EffectiveTo=NULL, IsCurrent=True
+# Bob (CustomerId=102) không thay đổi: IsCurrent=True, EffectiveTo=NULL
+```
+
+**Điểm quan trọng cần ghi nhớ:**
+
+| Khái niệm | Giải thích |
+|-----------|-----------|
+| **IsCurrent = True** | Row hiện tại đang có hiệu lực |
+| **EffectiveTo = NULL** | Row chưa bị expire |
+| **Expire trước, insert sau** | Thứ tự quan trọng — tránh duplicate IsCurrent=True |
+| **SCD Type 1** | Chỉ update trực tiếp, không giữ lịch sử |
+| **SCD Type 2** | Giữ toàn bộ lịch sử, dùng EffectiveFrom/To + IsCurrent |
+
+> [!TIP]
+> Tham khảo: [Delta Lake MERGE documentation](https://learn.microsoft.com/en-us/azure/databricks/delta/merge) và [Lakehouse dimensional modeling](https://learn.microsoft.com/en-us/fabric/data-warehouse/dimensional-modeling-overview)
+

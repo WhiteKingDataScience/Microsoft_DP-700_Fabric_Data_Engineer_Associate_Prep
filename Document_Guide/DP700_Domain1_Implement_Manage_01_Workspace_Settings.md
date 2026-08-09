@@ -741,3 +741,162 @@ D. Tăng `spark.sql.shuffle.partitions`
 - [Runtime 2.0](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0)
 - [High concurrency notebooks](https://learn.microsoft.com/en-us/fabric/data-engineering/configure-high-concurrency-session-notebooks)
 - [Airflow workspace settings](https://learn.microsoft.com/en-us/fabric/data-factory/apache-airflow-jobs-workspace-settings)
+
+---
+
+## 8. CÂU HỎI SCENARIO — WORKSPACE SETTINGS
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D1-W1 — Custom Pool vs Starter Pool
+
+**Một workload định kỳ chạy vào khung 02:00–04:00 mỗi ngày và cần Environment có nhiều thư viện wheel (.whl). Compute nào phù hợp nhất?**
+
+A. Starter pool (mặc định)  
+B. Custom live pool với active window được đặt vào khung 01:45–04:15  
+C. High concurrency giữa nhiều người dùng khác nhau  
+D. Airflow starter pool  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [Custom live pool](https://learn.microsoft.com/en-us/fabric/data-engineering/create-custom-spark-pools) (Preview) cho phép **pre-warm compute và tải trước thư viện** trong active window đã đặt trước; starter pool là best-effort và không đảm bảo startup time. Airflow starter pool là pool riêng của Airflow, không dùng cho Spark notebook/job.
+
+</details>
+
+---
+
+### Câu D1-W2 — High Concurrency Boundary
+
+**Hai notebook trong cùng workspace, nhưng do hai người dùng khác nhau chạy. High Concurrency có chia sẻ cùng một Spark session cho hai notebook này không?**
+
+A. Có, vì cùng workspace  
+B. Có, nếu cùng default lakehouse  
+C. Không — session sharing trong High Concurrency bị giới hạn theo cùng một user  
+D. Chỉ khi cả hai user đều là Admin  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**C.** [High Concurrency mode](https://learn.microsoft.com/en-us/fabric/data-engineering/configure-high-concurrency-session-notebooks) cho phép nhiều notebook **của cùng một user** chia sẻ session, không chia sẻ qua ranh giới người dùng khác. Đây là điểm bẫy thường gặp trong đề thi.
+
+</details>
+
+---
+
+### Câu D1-W3 — Runtime Interoperability
+
+**Solution sử dụng Runtime 2.0 với Delta 4.2 feature experimental, nhưng Warehouse và Direct Lake cũng cần đọc cùng table đó. Hành động tốt nhất là gì?**
+
+A. Bật ngay vì đây là runtime mới nhất  
+B. Kiểm tra khả năng tương thích (interoperability) và thử trên bản sao trước  
+C. Chạy `VACUUM 0 HOURS` để reset  
+D. Chuyển table sang CSV để tránh vấn đề  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** Các tính năng Delta 4.x-specific (như liquid clustering nâng cao) có thể chỉ hoạt động ở Spark engine; [Warehouse, Direct Lake, Power BI](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0) và các engine khác cần đọc phải hỗ trợ format đó. Luôn kiểm tra interoperability trên môi trường test trước khi áp dụng production.
+
+</details>
+
+---
+
+## 9. KẾ HOẠCH 14 NGÀY VÀ ĐÁNH GIÁ SẴN SÀNG
+
+> Phần này tổng hợp từ **DP-700 Readiness Assessment** (đánh giá ngày 04/08/2026, blueprint 21/07/2026).
+
+### 9.1 Đánh Giá Mức Sẵn Sàng
+
+| Tiêu chí | Sau cập nhật | Nhận xét |
+|---|---:|---|
+| Khớp blueprint | 98/100 | Đủ toàn bộ nhóm kỹ năng chính |
+| Tính chính xác/currentness | 92/100 | Đã sửa facts thay đổi nhanh và overclaim |
+| SQL/PySpark/KQL | 90/100 | Code hợp lệ và decision context |
+| Hands-on readiness | 86/100 | Cần tự chạy lab trong tenant Fabric |
+| Câu hỏi scenario | 90/100 | Trade-off, least privilege, troubleshooting |
+| Exam strategy | 91/100 | Checklist và kế hoạch 14 ngày |
+
+> [!IMPORTANT]
+> Đạt ≥80% ổn định trên ba lần liên tiếp mock exam + làm được lab thực tế → khoảng **88–92/100 mức sẵn sàng**. Điểm thi là **scaled score**, cần **700 trở lên** để đạt.
+
+### 9.2 Kế Hoạch 14 Ngày
+
+#### Ngày 1–2: Domain 1 — Workspace, CI/CD, Security
+
+- Tạo workspace Dev/Test, xem Spark settings, Environment, starter/custom pool.
+- Kết nối workspace test với [Git](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/intro-to-git-integration) và thực hiện commit/update/conflict.
+- Tạo deployment pipeline; phân biệt paired/unpaired items.
+- Tạo Viewer/item access và OneLake role; kiểm tra khác biệt với Contributor.
+
+#### Ngày 3–5: Domain 2 — Batch và Loading
+
+- Full load bằng `CREATE OR REPLACE` hoặc overwrite.
+- Incremental load với control watermark và `MERGE`.
+- SCD Type 1/2, dedup, missing/late-arriving dimension.
+- So sánh Lakehouse, Warehouse, Eventhouse, SQL Database bằng 10 scenarios.
+
+#### Ngày 6–7: Domain 2 — Streaming
+
+- Eventstream → Eventhouse/Lakehouse.
+- KQL `where`, `project`, `summarize`, `bin`, `join`, materialized view/update policy.
+- Spark Structured Streaming với checkpoint, watermark, window, output mode.
+- Standard shortcut vs query acceleration vs native table.
+
+#### Ngày 8–9: Domain 3 — Monitor và Troubleshoot
+
+- [Monitoring Hub](https://learn.microsoft.com/en-us/fabric/admin/monitoring-hub): pipeline, notebook, Dataflow run.
+- [Capacity Metrics app](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app): identify overload, top operations, smoothing/throttling.
+- Activator alert trên Job events hoặc KQL query.
+- Thực hành 5 lỗi: credential, schema drift, gateway, OOM/skew, shortcut permission.
+
+#### Ngày 10–11: Optimization
+
+- Tạo small files, chạy `OPTIMIZE`/V-Order/`VACUUM` trên dữ liệu lab.
+- So sánh partitioning, Z-Order và liquid clustering bằng physical plan/file count.
+- Tune Copy activity bằng partitioning/parallelism/throughput option.
+- KQL filter early, hot cache; Spark broadcast/AQE/skew.
+
+#### Ngày 12–13: Mock Exam
+
+- Làm 2 lượt 50 câu scenario, giới hạn thời gian 90–100 phút.
+- Ghi error log theo blueprint bullet, không chỉ theo tên file.
+- Mọi câu sai phải viết lại: requirement → rejected options → correct trade-off.
+
+#### Ngày 14: Final Review
+
+- Đọc lại bảng "bẫy thi" và các decision matrix trong từng file domain.
+- Làm [Microsoft Practice Assessment](https://learn.microsoft.com/en-us/credentials/certifications/fabric-data-engineer-associate/practice/assessment) và Exam Sandbox.
+- Chỉ đặt lịch khi đạt ≥80% ổn định và giải thích được vì sao ba đáp án còn lại sai.
+
+### 9.3 Mẹo Làm Bài Trong Phòng Thi
+
+- Đọc **câu cuối câu hỏi trước** để biết họ hỏi **BEST**, **MINIMUM**, **FIRST** hay **MOST likely**.
+- Gạch nhanh yêu cầu quan trọng: latency, no-copy, least privilege, low-code/pro-code, environment promotion, retry/transient, cost, compatibility.
+- Không chọn công cụ vì "mới nhất"; chọn vì nó đáp ứng ràng buộc với ít vận hành/rủi ro nhất.
+- Với security → xác định workspace role **trước** rồi mới suy luận RLS/CLS/item permissions.
+- Với data movement → phân biệt **copy**, **transform**, **orchestrate**.
+- Với monitoring → phân biệt **operation status** (Monitoring Hub) và **capacity resource health** (Capacity Metrics).
+- Với errors → retry chỉ cho **transient**; credential/schema/permission phải sửa nguyên nhân gốc.
+- Đánh dấu câu dài để quay lại, không tiêu quá 2–3 phút ở lượt đầu.
+
+### 9.4 Ngưỡng "Đủ Để Thi"
+
+> [!WARNING]
+> Nên hoãn thi nếu vẫn chưa làm được **độc lập** các việc sau:
+
+- Viết PySpark `MERGE`, dedup và Structured Streaming checkpoint/watermark.
+- Viết KQL filter/project/summarize/bin/join và giải thích native vs shortcut vs acceleration.
+- Chọn Dataflow Gen2/Pipeline/Notebook theo scenario cụ thể.
+- Giải thích Git integration vs deployment pipeline và permission model.
+- Giải thích OneLake security precedence và bypass pattern.
+- Chẩn đoán pipeline/notebook/capacity từ đúng monitoring surface.
+- Chọn OPTIMIZE/VACUUM/V-Order/Z-Order/liquid clustering đúng mục đích.
+
+### 9.5 Nguồn Học Chính Thức
+
+| Tài nguyên | Link |
+|-----------|------|
+| DP-700 Study Guide | [learn.microsoft.com](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) |
+| Fabric Data Engineer Associate | [Certification page](https://learn.microsoft.com/en-us/credentials/certifications/fabric-data-engineer-associate/) |
+| Khóa học DP-700T00 | [Training course](https://learn.microsoft.com/en-us/training/courses/dp-700t00) |
+| Practice Assessment | [Free practice test](https://learn.microsoft.com/en-us/credentials/certifications/fabric-data-engineer-associate/practice/assessment) |
+| Exam Sandbox | [aka.ms/examdemo](https://aka.ms/examdemo) |
+

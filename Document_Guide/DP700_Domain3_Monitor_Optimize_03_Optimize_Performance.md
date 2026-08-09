@@ -891,3 +891,177 @@ D. Chuyển mọi user thành Admin
 - [Liquid clustering](https://learn.microsoft.com/en-us/fabric/data-engineering/native-execution-engine-z-order-liquid-clustering)
 - [VACUUM](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-lake-vacuum)
 - [Z-Order](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-lake-z-order)
+
+---
+
+## 9. CÂU HỎI SCENARIO — OPTIMIZE PERFORMANCE
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D3-OPT1 — OPTIMIZE vs VACUUM
+
+**Bảng Delta có hàng nghìn small files (< 1 MB mỗi file) do nhiều micro-batch writes. Thao tác nào gộp các files lại để cải thiện read performance?**
+
+A. `VACUUM` với retention 7 ngày  
+B. `OPTIMIZE` (compaction)  
+C. `DROP TABLE`  
+D. `DESCRIBE HISTORY`  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [`OPTIMIZE`](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-optimization-and-v-order) thực hiện **compaction** — gộp nhiều small files thành ít files lớn hơn (target khoảng 1 GB) để tăng tốc độ đọc. `VACUUM` xoá các old Delta version files (dữ liệu đã bị xoá/cập nhật) để giải phóng storage, không gộp files active.
+
+</details>
+
+---
+
+### Câu D3-OPT2 — Liquid Clustering vs Z-Order
+
+**Table thường xuyên được query theo nhiều filter column kết hợp khác nhau, và data đến liên tục (incremental writes). Pattern nào phù hợp hơn?**
+
+A. Partition theo một cột cố định (ví dụ: năm)  
+B. Liquid clustering (linh hoạt, không yêu cầu full rewrite khi thay đổi)  
+C. Z-Order với cột cố định  
+D. VACUUM ngay sau mỗi write  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [Liquid clustering](https://learn.microsoft.com/en-us/fabric/data-engineering/native-execution-engine-z-order-liquid-clustering) phù hợp hơn khi:
+- Query patterns thay đổi hoặc có nhiều cột filter khác nhau
+- Data incremental — không yêu cầu full rewrite khi thay đổi clustering keys
+- Muốn tránh maintenance phức tạp của partition scheme
+
+Z-Order tốt cho cột filter cố định và ít thay đổi. Liquid clustering là evolution của Z-Order.
+
+</details>
+
+---
+
+### Câu D3-OPT3 — Spark AQE Và Skew
+
+**Spark job bị skew nghiêm trọng do hot keys trong join operation. AQE (Adaptive Query Execution) được bật. AQE giúp ích gì ở đây?**
+
+A. AQE tự động áp dụng **skew join optimization** — chia nhỏ hot partitions  
+B. AQE không giúp gì với skew  
+C. AQE tắt toàn bộ shuffles  
+D. AQE thay thế tất cả joins bằng MERGE  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [AQE skew join optimization](https://learn.microsoft.com/en-us/fabric/data-engineering/spark-job-definition) tự động phát hiện và chia nhỏ **skewed partitions** thành nhiều sub-tasks nhỏ hơn, giảm straggler task time. Tuy nhiên với skew **cực đoan**, có thể cần bổ sung **key salting** thủ công bên cạnh AQE.
+
+</details>
+
+---
+
+### Câu D3-OPT4 — KQL Hot Cache
+
+**KQL query thường filter trên dữ liệu 7 ngày gần nhất, nhưng table lưu 2 năm historical data. Tối ưu nào phù hợp?**
+
+A. Tăng hot cache period thành 7 ngày cho table đó  
+B. Xoá toàn bộ data cũ hơn 7 ngày  
+C. Chuyển sang VACUUM  
+D. Tắt V-Order trên table  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Hot cache](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/management/cache-policy) trong Eventhouse/KQL database cho phép giữ data gần đây trong SSD/RAM — query trên hot data nhanh hơn đáng kể so với cold data. Đặt `hot cache = 7d` phù hợp với access pattern mà không cần xoá historical data.
+
+</details>
+
+---
+
+### Câu D3-OPT5 — Pipeline Copy Activity Throughput
+
+**Copy activity cần sao chép 5 TB từ ADLS Gen2 vào Lakehouse nhưng chạy quá chậm (đơn luồng). Cách tăng throughput mà **ít thay đổi nhất**?**
+
+A. Bật **Parallel copy** với Data Integration Units (DIU) tăng cao  
+B. Giảm số DIU xuống tối thiểu  
+C. Tắt staging  
+D. Dùng deployment pipeline để copy  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Parallel copy](https://learn.microsoft.com/en-us/fabric/data-factory/copy-data-activity#performance-optimization-tips) trong Copy activity cho phép đọc và ghi song song với nhiều luồng. Tăng DIU (Data Integration Units) phân bổ thêm compute cho copy — đây là cách nhanh nhất và ít xâm phạm nhất để tăng throughput. Cũng cần xem xét bật **partition option** để chia source thành phần nhỏ copy song song.
+
+</details>
+
+---
+
+## 10. LAB THỰC HÀNH — OPTIMIZE DELTA TABLES
+
+### Lab 7 — OPTIMIZE, V-Order Và VACUUM
+
+**Mục tiêu:** Thực hành các lệnh tối ưu hoá Delta table — compaction, V-Order encoding, và cleanup.
+
+**Bước 1: Tạo bảng lab với nhiều small files**
+
+```python
+from pyspark.sql import functions as F
+
+# Tắt tạm auto-compact để mô phỏng small files
+spark.conf.set("spark.databricks.delta.optimizeWrite.enabled", "false")
+
+# Ghi dữ liệu giả lập — nhiều lần append tạo nhiều small files
+for day in range(1, 8):
+    df = spark.createDataFrame(
+        [(i, f"Device_{i % 10}", round(20 + i * 0.01, 2), f"2026-08-{day:02d}")
+         for i in range(1, 1001)],
+        ["RecordId", "DeviceId", "Value", "Date"]
+    )
+    df.write.format("delta").mode("append").saveAsTable("lab.telemetry_raw")
+
+# Kiểm tra số files hiện tại
+spark.sql("DESCRIBE DETAIL lab.telemetry_raw").select("numFiles", "sizeInBytes").show()
+```
+
+**Bước 2: Chạy OPTIMIZE + V-Order**
+
+```python
+# OPTIMIZE: compaction small files (gộp thành target size ~1GB)
+# V-Order: sắp xếp dữ liệu để tăng tốc đọc bởi Parquet reader
+spark.sql("""
+    OPTIMIZE lab.telemetry_raw
+    VORDER                        -- Bật V-Order encoding
+    ZORDER BY (DeviceId, Date)    -- Sắp xếp co-locate theo 2 cột filter thường dùng
+""")
+
+# So sánh sau OPTIMIZE
+spark.sql("DESCRIBE DETAIL lab.telemetry_raw").select("numFiles", "sizeInBytes").show()
+```
+
+**Bước 3: Xem lịch sử và chạy VACUUM**
+
+```python
+# Xem lịch sử thay đổi (Delta transaction log)
+spark.sql("DESCRIBE HISTORY lab.telemetry_raw").select(
+    "version", "timestamp", "operation", "operationParameters"
+).show(10, truncate=False)
+
+# VACUUM: xoá files của versions cũ để giải phóng storage
+# Mặc định: retain 7 ngày (168 giờ) — KHÔNG nên set dưới 7 ngày trên production
+spark.sql("VACUUM lab.telemetry_raw RETAIN 168 HOURS")
+# Sau VACUUM: time travel về version trước 7 ngày sẽ không còn hoạt động
+```
+
+**Tóm tắt kết quả mong đợi:**
+
+| Thao tác | Mục đích | Ảnh hưởng |
+|---------|---------|----------|
+| `OPTIMIZE` | Gộp small files | Giảm file count, tăng read speed |
+| `VORDER` | Encoding tối ưu | Tăng compression, tăng tốc đọc Power BI/Warehouse |
+| `ZORDER BY` | Co-locate data | Giảm files cần đọc khi filter theo cột đó |
+| `VACUUM 168H` | Xoá files cũ | Giải phóng storage, mất time travel cũ |
+
+**Bảng so sánh các kỹ thuật optimization:**
+
+| Kỹ thuật | Use case | Trade-off |
+|---------|---------|----------|
+| Partitioning | Low-cardinality, range filter | Quá nhiều partition → small files mới |
+| Z-Order | High-cardinality, cột filter cố định | Cần full rewrite khi đổi key |
+| Liquid clustering | Multi-dimensional filter, incremental | Cần Native Execution Engine |
+| V-Order | Đọc bởi Fabric engines (Power BI, Warehouse) | Thêm thời gian write |
+
+> [!TIP]
+> Tham khảo: [Delta Lake optimization guide](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-optimization-and-v-order)
+

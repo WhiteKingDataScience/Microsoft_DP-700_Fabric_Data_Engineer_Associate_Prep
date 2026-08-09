@@ -568,3 +568,144 @@ D. Phải VACUUM Warehouse
 - [Capacity Metrics Compute page](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app-compute-page)
 - [Pipeline alerts](https://learn.microsoft.com/en-us/fabric/data-factory/create-alerts-for-pipeline-runs)
 - [Job events](https://learn.microsoft.com/en-us/fabric/real-time-hub/explore-fabric-job-events)
+
+---
+
+## 7. CÂU HỎI SCENARIO — MONITORING & ALERTS
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D3-M1 — Monitoring Hub: Operational Run Status
+
+**Cần xem trạng thái (Success/Failed/Running) của tất cả pipeline và notebook runs trong workspace trong 24 giờ qua. Công cụ nào phù hợp?**
+
+A. Monitoring Hub  
+B. Capacity Metrics app  
+C. Git repo commit history  
+D. Domain admin portal  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Monitoring Hub](https://learn.microsoft.com/en-us/fabric/admin/monitoring-hub) là nơi xem **operational run status** của tất cả Fabric items (pipeline, notebook, Dataflow, Spark job) trong workspace. Capacity Metrics app theo dõi resource usage của capacity, không phải run status từng item.
+
+</details>
+
+---
+
+### Câu D3-M2 — Capacity Metrics: Resource Health
+
+**Cần xác định item nào đang tiêu thụ nhiều CU (Capacity Units) nhất và nguyên nhân capacity bị throttled. Công cụ nào phù hợp?**
+
+A. Capacity Metrics app  
+B. Monitoring Hub only  
+C. KQL database schema browser  
+D. Deployment pipeline  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Capacity Metrics app](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app) phân tích **capacity resource usage** — xem CU consumption theo item, identify top consumers, xem smoothing và throttling stages. Monitoring Hub theo dõi operational status, không phải capacity health.
+
+</details>
+
+---
+
+### Câu D3-M3 — Alert Email Đơn Giản Cho Pipeline
+
+**Pipeline scheduled chạy hàng ngày. Muốn nhận email khi pipeline fail mà không cần cấu hình phức tạp. Giải pháp ít vận hành nhất?**
+
+A. Built-in failure notification trong pipeline settings  
+B. Tạo custom Spark pool  
+C. V-Order optimization  
+D. RLS trên Lakehouse  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Built-in failure notification](https://learn.microsoft.com/en-us/fabric/data-factory/create-alerts-for-pipeline-runs) trong pipeline settings cho phép cấu hình email alert khi pipeline fail chỉ bằng vài click — không cần code, không cần external service. Đây là giải pháp có **operational overhead thấp nhất** cho use case này.
+
+</details>
+
+---
+
+### Câu D3-M4 — Activator Cho Alert Phức Tạp
+
+**Cần gửi thông báo Teams cho cả manual và scheduled failures, với condition phức tạp (ví dụ: chỉ alert khi failure rate > 20% trong 1 giờ). Giải pháp nào phù hợp?**
+
+A. Activator trên Job events hoặc KQL query  
+B. Chỉ dùng scheduled email notification  
+C. VACUUM  
+D. GitHub issue tracker  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Activator](https://learn.microsoft.com/en-us/fabric/real-time-hub/explore-fabric-job-events) (Fabric Data Activator) cho phép định nghĩa **custom conditions và actions** — monitor Job events hoặc KQL query results, trigger Teams/email/webhook khi condition thỏa mãn. Phù hợp cho alert logic phức tạp hơn built-in notification.
+
+</details>
+
+---
+
+### Câu D3-M5 — Overload CU > 100%
+
+**Capacity Metrics app hiển thị CU usage đạt 120% trong một số timepoints. Tuy nhiên không có request nào bị reject ngay lập tức. Giải thích nào đúng nhất?**
+
+A. Metrics app bị lỗi — không thể vượt 100%  
+B. Overload không đồng nghĩa rejection ngay — **smoothing**, **overage protection**, và **autoscale** quyết định khi nào throttling xảy ra  
+C. Mọi job đã thất bại  
+D. Phải chạy VACUUM Warehouse ngay  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [Fabric capacity throttling](https://learn.microsoft.com/en-us/fabric/enterprise/throttling) là tiến trình nhiều giai đoạn: first rejection xảy ra ở mức overload cao và kéo dài, không phải ngay khi vượt 100%. **Smoothing** làm mờ peaks tạm thời; **overage protection** cho phép burst một thời gian ngắn. Điều này là điểm bẫy phổ biến trong đề thi.
+
+</details>
+
+---
+
+## 8. LAB THỰC HÀNH — WORKSPACE MONITORING
+
+### Lab 9 — KQL Query Cho Workspace Monitoring
+
+**Mục tiêu:** Sử dụng KQL để phân tích job events trong workspace và tính failure rate.
+
+```kusto
+// Query workspace job events từ 30 phút qua
+// (Table ItemJobEventLogs có sẵn trong Fabric Real-Time Hub)
+ItemJobEventLogs
+| where ingestion_time() > ago(30m)
+| summarize
+    TotalRuns    = count(),
+    FailedRuns   = countif(JobStatus == "Failed"),
+    SuccessRuns  = countif(JobStatus == "Succeeded")
+    by JobType, ItemName
+| extend FailureRate = todouble(FailedRuns) / TotalRuns
+| where TotalRuns > 0
+| order by FailureRate desc
+```
+
+**Giải thích từng bước:**
+
+| Bước | KQL | Mục đích |
+|------|-----|---------|
+| 1 | `where ingestion_time() > ago(30m)` | Lọc 30 phút gần nhất |
+| 2 | `summarize count() by JobType, ItemName` | Đếm theo item và loại job |
+| 3 | `countif(JobStatus == "Failed")` | Đếm riêng lần thất bại |
+| 4 | `extend FailureRate = ...` | Tính tỷ lệ thất bại |
+| 5 | `order by FailureRate desc` | Item có failure rate cao nhất lên đầu |
+
+**Mở rộng: Alert khi failure rate cao**
+
+```kusto
+// Cấu hình Activator để alert khi FailureRate > 0.5 (50%)
+ItemJobEventLogs
+| where ingestion_time() > ago(1h)
+| summarize
+    FailedRuns = countif(JobStatus == "Failed"),
+    TotalRuns  = count()
+    by ItemName
+| extend FailureRate = todouble(FailedRuns) / TotalRuns
+| where FailureRate > 0.5 and TotalRuns >= 3   // Ít nhất 3 runs mới alert
+| project ItemName, FailureRate, FailedRuns, TotalRuns
+```
+
+> [!NOTE]
+> `ItemJobEventLogs` chứa Job events từ Fabric workspace. Tham khảo: [Fabric Job events](https://learn.microsoft.com/en-us/fabric/real-time-hub/explore-fabric-job-events)
+

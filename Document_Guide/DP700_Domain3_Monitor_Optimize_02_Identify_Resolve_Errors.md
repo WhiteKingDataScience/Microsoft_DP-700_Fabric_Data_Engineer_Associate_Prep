@@ -663,3 +663,81 @@ D. Bật V-Order
 - [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 - [Take ownership of Fabric items](https://learn.microsoft.com/en-us/fabric/fundamentals/item-ownership-take-over)
 - [Monitor Copy activity](https://learn.microsoft.com/en-us/fabric/data-factory/monitor-copy-activity)
+
+---
+
+## 10. CÂU HỎI SCENARIO — IDENTIFY & RESOLVE ERRORS
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D3-E1 — Authentication Error Liên Tục
+
+**Pipeline bị lỗi `AuthenticationError` trong mỗi lần chạy. Đã retry 5 lần nhưng kết quả giống nhau. Hành động **đầu tiên** cần làm là gì?**
+
+A. Tăng retry lên 20 lần  
+B. Kiểm tra và xác minh credentials/connection identity, quyền trên source và sink  
+C. Tăng số Spark partitions  
+D. Bật V-Order  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** `AuthenticationError` xảy ra **nhất quán** qua mọi lần chạy là **deterministic error** — không phải transient (tạm thời). Retry chỉ hữu ích cho transient errors (network timeout, throttling). Hành động đúng: kiểm tra [credentials/connection](https://learn.microsoft.com/en-us/fabric/data-factory/connector-troubleshoot-guide), identity (managed identity, service principal), và quyền trên source/sink.
+
+</details>
+
+---
+
+### Câu D3-E2 — Data Skew Trong Spark
+
+**Spark job có 200 tasks. Đa số tasks hoàn thành trong 3 giây, nhưng 5 tasks mất hơn 8 phút. Nguyên nhân **hợp lý nhất** là gì?**
+
+A. Data skew — một số partition keys có quá nhiều dữ liệu hơn các keys khác  
+B. Git conflict trong notebook  
+C. Sensitivity label cấu hình sai  
+D. Airflow pool bị paused  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** **Straggler tasks** (tasks chậm hơn rất nhiều so với phần còn lại) là triệu chứng điển hình của [data skew](https://learn.microsoft.com/en-us/fabric/data-engineering/spark-job-definition) — dữ liệu phân phối không đều, một số partitions chứa nhiều dữ liệu hơn → những tasks đó mất thêm thời gian. Giải pháp: key salting, AQE skew join, repartition.
+
+</details>
+
+---
+
+### Câu D3-E3 — Dataflow Owner Rời Tổ Chức
+
+**Dataflow Gen2 bắt đầu báo lỗi staging permission sau khi owner rời công ty và tài khoản bị vô hiệu hóa. Fix nào phù hợp nhất?**
+
+A. Take ownership Dataflow và refresh credentials/connections với identity mới  
+B. Scale capacity lên tier cao hơn  
+C. Chạy VACUUM trên Lakehouse  
+D. Đổi KQL hot cache policy  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** Khi owner rời tổ chức, credentials và connections gắn với tài khoản cũ sẽ fail. Giải pháp: [Take ownership](https://learn.microsoft.com/en-us/fabric/fundamentals/item-ownership-take-over) Dataflow với account mới → refresh/cập nhật credentials và connections. Đây là root cause phổ biến của Dataflow permission errors trong môi trường production.
+
+</details>
+
+---
+
+### Câu D3-E4 — GatewayUnreachable Định Kỳ
+
+**Pipeline báo lỗi `GatewayUnreachable` một cách định kỳ (ví dụ: mỗi tháng một lần). Hành động đầu tiên để điều tra nguyên nhân là gì?**
+
+A. Kết luận ngay đây là do gateway auto-update định kỳ  
+B. Đối chiếu gateway logs, service logs và network logs theo timestamp để tìm correlation  
+C. DROP TABLE liên quan và tạo lại  
+D. Tắt security để test  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** Không nên kết luận nguyên nhân từ chu kỳ quan sát mà không có evidence. Quy trình đúng:
+1. Ghi lại **timestamp chính xác** của mỗi lần lỗi
+2. Đối chiếu với [gateway logs](https://learn.microsoft.com/en-us/data-integration/gateway/service-gateway-tshoot), service health dashboard, và network infrastructure logs
+3. Tìm pattern correlation — chỉ kết luận sau khi có evidence
+
+Đây là nguyên tắc **systematic troubleshooting** — không đoán mò.
+
+</details>
+

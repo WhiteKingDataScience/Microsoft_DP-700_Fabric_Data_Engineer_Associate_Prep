@@ -966,3 +966,157 @@ D. Một KQL materialized view
 - [Pipeline runs, schedules and events](https://learn.microsoft.com/en-us/fabric/data-factory/pipeline-runs)
 - [Notebook activity](https://learn.microsoft.com/en-us/fabric/data-factory/notebook-activity)
 - [Fabric Data Factory overview](https://learn.microsoft.com/en-us/fabric/data-factory/data-factory-overview)
+
+---
+
+## 7. CÂU HỎI SCENARIO — ORCHESTRATION
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D1-O1 — Low-Code Transformation
+
+**Yêu cầu: rename cột, filter dữ liệu, merge hai bảng, sử dụng các connector có sẵn, và cần query folding để đẩy xử lý về phía nguồn. Công cụ nào phù hợp nhất?**
+
+A. Dataflow Gen2  
+B. Notebook PySpark  
+C. Deployment pipeline  
+D. Activator  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Dataflow Gen2](https://learn.microsoft.com/en-us/fabric/data-factory/dataflows-gen2-overview) sử dụng Power Query — giao diện **low-code** với hơn 150 connectors và hỗ trợ **query folding** (đẩy xử lý về phía source database thay vì kéo toàn bộ dữ liệu về). Các thao tác rename/filter/merge đơn giản là use case điển hình của Dataflow Gen2.
+
+</details>
+
+---
+
+### Câu D1-O2 — Multi-Step Orchestration
+
+**Cần orchestrate theo thứ tự: Copy dữ liệu → Notebook transform → Validation → Gửi thông báo Teams khi có lỗi. Công cụ nào phù hợp nhất?**
+
+A. Data Pipeline  
+B. Dataflow Gen2  
+C. KQL database  
+D. Sensitivity label  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Data Pipeline](https://learn.microsoft.com/en-us/fabric/data-factory/data-factory-overview) cung cấp các **activity**: Copy, Notebook, Conditional (If/Else), Web/Teams notification, cùng các **dependency settings** (On Success, On Failure). Đây là công cụ duy nhất trong Fabric có thể orchestrate đa bước với error handling và alerting tích hợp.
+
+</details>
+
+---
+
+### Câu D1-O3 — Metadata-Driven ForEach
+
+**Cần xử lý 40 bảng theo danh sách metadata, chạy tối đa 5 bảng song song cùng lúc. Pattern pipeline nào tối ưu?**
+
+A. Tạo 40 pipeline riêng biệt  
+B. Lookup activity lấy danh sách → ForEach batch count = 5 → gọi Copy/Notebook với dynamic parameters  
+C. Một notebook hardcode tên 40 bảng  
+D. OneLake role cho từng bảng  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [Metadata-driven ForEach](https://learn.microsoft.com/en-us/fabric/data-factory/tutorial-metadata-driven-pipeline) là pattern chuẩn:
+1. **Lookup** query bảng control để lấy danh sách entities cần xử lý
+2. **ForEach** với `batchCount = 5` cho phép chạy 5 iterations song song
+3. Bên trong ForEach: Copy/Notebook activity nhận `@item().EntityName` làm dynamic parameter
+
+Pattern này **scalable** — thêm entity chỉ cần insert vào bảng control, không sửa pipeline.
+
+</details>
+
+---
+
+## 8. LAB THỰC HÀNH — METADATA-DRIVEN PIPELINE
+
+> Lab này mô phỏng pattern metadata-driven thường gặp trong đề thi DP-700.
+
+### Lab 8 — Xây Dựng Pipeline Theo Metadata
+
+**Mục tiêu:** Pipeline tự động xử lý nhiều entity dựa trên bảng control, hỗ trợ cả Full Load và Incremental Load.
+
+**Bước 1: Tạo bảng control (trong Lakehouse hoặc Warehouse)**
+
+```sql
+CREATE TABLE control.etl_config (
+    EntityName      VARCHAR(100) NOT NULL,
+    SourceQuery     VARCHAR(1000),
+    TargetTable     VARCHAR(200) NOT NULL,
+    LoadType        VARCHAR(20) NOT NULL,   -- 'Full' hoặc 'Incremental'
+    WatermarkColumn VARCHAR(100),           -- Cột dùng cho incremental (ví dụ: ModifiedDate)
+    LastWatermark   DATETIME2,             -- Giá trị watermark lần chạy trước
+    IsEnabled       BIT DEFAULT 1
+);
+
+-- Ví dụ dữ liệu mẫu
+INSERT INTO control.etl_config VALUES
+  ('orders',    'SELECT * FROM src.orders',    'gold.fact_orders',    'Incremental', 'ModifiedDate', '2026-08-01', 1),
+  ('customers', 'SELECT * FROM src.customers', 'gold.dim_customer',   'Full',        NULL,           NULL,         1),
+  ('products',  'SELECT * FROM src.products',  'gold.dim_product',    'Full',        NULL,           NULL,         1);
+```
+
+**Bước 2: Cấu trúc pipeline**
+
+```text
+Pipeline: MetadataDriven_ETL
+│
+├── [1] Lookup: Lấy danh sách entities IsEnabled=1
+│       Query: SELECT * FROM control.etl_config WHERE IsEnabled = 1
+│
+├── [2] ForEach: @activity('Lookup').output.value
+│       Sequential: false
+│       Batch Count: 4 đến 5  (chạy song song tối đa 5)
+│       │
+│       └── [2a] If Condition: @equals(item().LoadType, 'Full')
+│               ├── TRUE (Full Load):
+│               │     Copy Activity: overwrite target table
+│               │
+│               └── FALSE (Incremental Load):
+│                     [2b] Lookup watermark từ control table
+│                     [2c] Copy staging với filter WHERE @item().WatermarkColumn > @watermark
+│                     [2d] Notebook MERGE staging → target
+│                     [2e] Update LastWatermark trong control table (CHỈ sau khi success)
+│
+└── [3] On Failure → Fail Activity với message:
+          "ETL failed for entity: @{item().EntityName}, RunId: @{pipeline().RunId}"
+```
+
+**Bước 3: Notebook MERGE (Python/PySpark)**
+
+```python
+# Parameter cell — pipeline sẽ ghi đè các giá trị này
+entity_name   = "orders"
+staging_table = "staging.orders_stg"
+target_table  = "gold.fact_orders"
+merge_key     = "OrderId"
+
+from delta.tables import DeltaTable
+from pyspark.sql import functions as F
+
+staging = spark.table(staging_table)
+target  = DeltaTable.forName(spark, target_table)
+
+(target.alias("t")
+ .merge(staging.alias("s"), f"t.{merge_key} = s.{merge_key}")
+ .whenMatchedUpdateAll()
+ .whenNotMatchedInsertAll()
+ .execute())
+
+# Idempotent: rerun MERGE không tạo duplicate
+# Watermark chỉ được update ở pipeline NGOÀI notebook này, sau khi MERGE thành công
+```
+
+**Điểm then chốt cần nhớ:**
+
+| Nguyên tắc | Giải thích |
+|-----------|-----------|
+| **Watermark commit sau success** | Không update watermark trong notebook — chỉ update ở pipeline activity sau khi toàn bộ MERGE thành công |
+| **Fail Activity với context** | Thông báo lỗi phải chứa entity name và run ID để dễ debug |
+| **Idempotent MERGE** | Rerun pipeline vì lỗi không được tạo dữ liệu trùng |
+| **Batch Count 4–5** | Cân bằng giữa throughput và resource contention trên capacity |
+
+> [!TIP]
+> Tham khảo: [Metadata-driven pipeline tutorial](https://learn.microsoft.com/en-us/fabric/data-factory/tutorial-metadata-driven-pipeline) và [Pipeline expressions](https://learn.microsoft.com/en-us/fabric/data-factory/expression-language)
+

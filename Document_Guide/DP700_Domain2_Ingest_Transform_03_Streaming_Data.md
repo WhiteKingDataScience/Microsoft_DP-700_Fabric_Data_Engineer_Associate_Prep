@@ -1132,3 +1132,243 @@ D. Import vào semantic model
 - [Query acceleration](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/query-acceleration-overview)
 - [Structured Streaming best practices](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-best-practices)
 - [OneLake shortcuts in KQL database](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/onelake-shortcuts)
+
+---
+
+## 10. CÂU HỎI SCENARIO — STREAMING DATA
+
+> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
+
+### Câu D2-ST1 — Streaming Dashboard Real-Time
+
+**Yêu cầu: latency thấp (gần real-time), alert khi ngưỡng vượt quá, source từ Event Hub, và dashboard KQL. Giải pháp nào phù hợp nhất?**
+
+A. Eventstream → Eventhouse (Real-Time Intelligence)  
+B. Pipeline batch hàng ngày  
+C. Import semantic model  
+D. Full load notebook mỗi giờ  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Real-Time Intelligence (RTI)](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/overview) gồm Eventstream (ingestion) → Eventhouse (KQL storage) → Real-Time Dashboard phù hợp hoàn hảo cho operational real-time analytics với latency thấp và alerting. Batch pipeline không đáp ứng được yêu cầu near real-time.
+
+</details>
+
+---
+
+### Câu D2-ST2 — Stateful Stream-Stream Join
+
+**Cần thực hiện stream-stream join giữa hai event streams (orders và inventory) dựa trên key và time window, sau đó ghi kết quả vào Delta Lake với checkpoint đảm bảo exactly-once. Công cụ nào phù hợp?**
+
+A. Spark Structured Streaming  
+B. Deployment pipeline  
+C. Sensitivity label  
+D. Git integration  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Spark Structured Streaming](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview) hỗ trợ **stateful stream-stream join** với state store, checkpoint (fault-tolerance), và Delta Lake sink. Đây là công cụ phù hợp nhất cho stateful ETL streaming phức tạp.
+
+</details>
+
+---
+
+### Câu D2-ST3 — Shortcut + Query Acceleration
+
+**Delta table lưu trong OneLake. Không muốn copy/ingest vào Eventhouse, nhưng dashboard KQL cần query nhanh trên 7 ngày gần nhất. Giải pháp tối ưu?**
+
+A. Standard shortcut (không cache)  
+B. OneLake shortcut + query acceleration (cache 7 ngày)  
+C. Chỉ dùng native table (phải ingest)  
+D. Export CSV ra ngoài  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** [Query acceleration](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/query-acceleration-overview) cache một khoảng thời gian của external Delta table trong Eventhouse — giữ **source of truth trong OneLake** (không copy toàn bộ) nhưng tăng query performance đáng kể cho phạm vi được cache. Standard shortcut query chậm hơn vì không có cache.
+
+</details>
+
+---
+
+### Câu D2-ST4 — Tumbling Window
+
+**Mỗi event chỉ thuộc đúng một cửa sổ thời gian 5 phút, các cửa sổ không chồng lên nhau. Window type nào phù hợp?**
+
+A. Tumbling window  
+B. Sliding window  
+C. Session window  
+D. Snapshot window  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**A.** [Tumbling window](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/create-notebookv2) có kích thước cố định, **không chồng lấp (non-overlapping)** — mỗi event thuộc đúng một window. Sliding window các cửa sổ chồng lên nhau; session window dựa trên inactivity gap.
+
+</details>
+
+---
+
+### Câu D2-ST5 — Session Window
+
+**Muốn nhóm events theo phiên làm việc của user, mỗi phiên kết thúc sau 15 phút không có activity. Window type nào?**
+
+A. Tumbling  
+B. Sliding  
+C. Session  
+D. Hopping 1 ngày  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**C.** [Session window](https://learn.microsoft.com/en-us/azure/stream-analytics/stream-analytics-window-functions#session-window) sử dụng **inactivity gap** — window đóng lại sau khoảng thời gian không có event mới. Phù hợp cho user session analysis, clickstream, hoặc bất kỳ pattern nào dựa trên khoảng nghỉ giữa events.
+
+</details>
+
+---
+
+### Câu D2-ST6 — State Unbounded Growth
+
+**Spark Structured Streaming job đang chạy nhưng memory sử dụng tăng liên tục không giới hạn. Nguyên nhân và giải pháp?**
+
+A. Bỏ checkpoint để giảm tải  
+B. Thêm **watermark** và/hoặc **TTL** phù hợp; thiết kế key và window hợp lý để bound state  
+C. Tăng Viewer role cho pipeline  
+D. Git commit lại notebook  
+
+<details><summary>Đáp án và giải thích</summary>
+
+**B.** **Unbounded state** là vấn đề phổ biến khi dùng stateful operations (join, groupBy không window). Giải pháp:
+- Thêm [watermark](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview#watermarking) để bound late data
+- Dùng `mapGroupsWithState` với TTL (Time-To-Live)
+- Thiết kế key granularity phù hợp (tránh key cardinality quá cao)
+
+Bỏ checkpoint sẽ phá vỡ fault tolerance, không giải quyết được memory issue.
+
+</details>
+
+---
+
+## 11. LAB THỰC HÀNH — STREAMING DATA
+
+### Lab 3 — Spark Structured Streaming Với Watermark
+
+**Mục tiêu:** Thực hành streaming aggregation có watermark để xử lý late-arriving data.
+
+```python
+from pyspark.sql.functions import avg, count, window
+
+# ═══════════════════════════════════════════════════
+# Tạo stream giả lập (rate source — dùng trong Fabric Notebook)
+# ═══════════════════════════════════════════════════
+stream = (
+    spark.readStream
+    .format("rate")
+    .option("rowsPerSecond", 10)
+    .load()
+    .selectExpr(
+        "timestamp AS EventTime",
+        "CAST(value % 5 AS STRING) AS DeviceId",
+        "CAST(20 + value % 15 AS DOUBLE) AS Temperature"
+    )
+)
+
+# ═══════════════════════════════════════════════════
+# Aggregation với watermark: cho phép event đến muộn ≤2 phút
+# ═══════════════════════════════════════════════════
+agg = (
+    stream
+    # Watermark: event đến sau 2 phút kể từ EventTime sẽ bị bỏ qua
+    .withWatermark("EventTime", "2 minutes")
+    # Tumbling window 1 phút per DeviceId
+    .groupBy(window("EventTime", "1 minute"), "DeviceId")
+    .agg(
+        avg("Temperature").alias("AvgTemp"),
+        count("*").alias("EventCount")
+    )
+)
+
+# ═══════════════════════════════════════════════════
+# Ghi kết quả vào Delta table với checkpoint
+# ═══════════════════════════════════════════════════
+query = (
+    agg.writeStream
+    .format("delta")
+    .outputMode("append")              # append: chỉ ghi kết quả đã finalized
+    .option("checkpointLocation", "Files/checkpoints/lab_streaming")
+    .trigger(processingTime="30 seconds")  # micro-batch mỗi 30 giây
+    .toTable("lab.device_minute_agg")
+)
+# query.stop()  # Dừng query khi xong
+```
+
+**Điểm cần hiểu:**
+- `withWatermark` → giới hạn state size, cho phép late data trong threshold
+- `outputMode("append")` → chỉ output khi window được finalized (sau watermark)
+- `checkpointLocation` → đảm bảo fault-tolerance, rerun tiếp tục từ chỗ dừng
+
+---
+
+### Lab 4 — KQL Core Operators
+
+**Mục tiêu:** Thực hành các KQL operator thường gặp trong đề thi — filter, aggregate, bin, percentile.
+
+```kusto
+// Phân tích telemetry 1 giờ gần nhất
+let StartTime = ago(1h);
+Telemetry
+| where Timestamp >= StartTime
+| project Timestamp, DeviceId, Temperature, Site   // Chọn cột cần thiết
+| summarize
+    AvgTemp  = avg(Temperature),
+    P95Temp  = percentile(Temperature, 95),         // Percentile 95
+    Events   = count()
+    by Site, DeviceId, bin(Timestamp, 5m)           // Group theo 5-minute bucket
+| where P95Temp > 80                                // Filter sau aggregation
+| order by Timestamp desc
+```
+
+**Các operator cần nhớ:**
+
+| Operator | Mục đích |
+|---------|---------|
+| `where` | Filter rows (giống WHERE trong SQL) |
+| `project` | Chọn/rename cột (giống SELECT) |
+| `summarize` | Aggregate + group by |
+| `bin(column, interval)` | Làm tròn giá trị xuống bucket gần nhất |
+| `percentile(col, N)` | Tính percentile thứ N |
+| `order by` | Sắp xếp kết quả |
+
+---
+
+### Lab 5 — KQL Join Với Reference Data
+
+**Mục tiêu:** Kết hợp streaming data với reference table trong Eventhouse.
+
+```kusto
+// Left outer join: lấy thông tin device từ reference table
+Telemetry
+| where Timestamp > ago(30m)
+| join kind=leftouter (
+    DeviceReference                    // Reference table (lookup)
+) on DeviceId                          // Join key
+| project
+    Timestamp,
+    DeviceId,
+    Site,
+    DeviceType,                        // Từ DeviceReference
+    Temperature
+| summarize
+    AvgTemp = avg(Temperature)
+    by Site, DeviceType, bin(Timestamp, 5m)
+```
+
+**Các loại join trong KQL:**
+
+| Kind | Mô tả |
+|------|-------|
+| `inner` | Chỉ giữ rows match cả hai bên |
+| `leftouter` | Giữ tất cả rows từ left, NULL nếu không match |
+| `rightouter` | Giữ tất cả rows từ right |
+| `fullouter` | Giữ tất cả rows từ cả hai |
+
+> [!TIP]
+> Tham khảo KQL documentation: [Kusto Query Language overview](https://learn.microsoft.com/en-us/kusto/query/)
+
