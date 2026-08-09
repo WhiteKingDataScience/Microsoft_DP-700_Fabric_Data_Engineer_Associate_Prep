@@ -358,10 +358,22 @@ agg=(parsed.withWatermark('EventTime','10 minutes')
 
 ```python
 from delta.tables import DeltaTable
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 
 def upsert(batch_df,batch_id):
+    # Một micro-batch có thể chứa nhiều event cho cùng DeviceId.
+    # MERGE chỉ an toàn khi tối đa một source row match một target row.
+    latest_per_device = Window.partitionBy('DeviceId').orderBy(
+        F.col('EventTime').desc()
+    )
+    source = (batch_df
+              .withColumn('_rn', F.row_number().over(latest_per_device))
+              .filter(F.col('_rn') == 1)
+              .drop('_rn'))
+
     tgt=DeltaTable.forName(spark,'silver_device')
-    (tgt.alias('t').merge(batch_df.alias('s'),'t.DeviceId=s.DeviceId')
+    (tgt.alias('t').merge(source.alias('s'),'t.DeviceId=s.DeviceId')
      .whenMatchedUpdateAll(condition='s.EventTime >= t.EventTime')
      .whenNotMatchedInsertAll().execute())
 
@@ -370,6 +382,8 @@ q=(parsed.writeStream.foreachBatch(upsert)
    .trigger(availableNow=True).start())
 q.awaitTermination()
 ```
+
+> **Vì sao phải dedup trong `foreachBatch`?** Spark có thể retry một micro-batch, và một batch thường có nhiều event cho cùng key. `MERGE` chỉ có thể update một target row từ một source row xác định. Do đó, dùng unique business key, dedup/order ổn định và update condition không làm dữ liệu “quay ngược” theo thời gian. Nếu nhiều event cùng `DeviceId` và `EventTime`, production schema phải có thêm `EventId`/sequence làm tie-breaker. `batch_id` cũng có thể được lưu ở sink để chống ghi lặp khi custom sink không có transaction semantics phù hợp.
 
 ### 5.8. Checkpointing
 - Một query → một durable checkpoint.
@@ -1402,4 +1416,3 @@ KQL bin() = fixed bucket cho summarize, không phải toàn bộ Stream Analytic
 - [OneLake shortcuts in KQL database](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/onelake-shortcuts)
 
 ---
-

@@ -1025,20 +1025,34 @@ entity_name   = "orders"
 staging_table = "staging.orders_stg"
 target_table  = "gold.fact_orders"
 merge_key     = "OrderId"
+order_column  = "ModifiedDate"
 
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 
-staging = spark.table(staging_table)
+# MERGE yêu cầu tối đa một source row match một target row.
+# Giữ bản ghi mới nhất cho mỗi business key để rerun an toàn.
+latest_per_key = Window.partitionBy(merge_key).orderBy(
+    F.col(order_column).desc(),
+    F.col(merge_key).asc()
+)
+staging = (
+    spark.table(staging_table)
+         .withColumn("_rn", F.row_number().over(latest_per_key))
+         .filter(F.col("_rn") == 1)
+         .drop("_rn")
+)
 target  = DeltaTable.forName(spark, target_table)
 
 (target.alias("t")
  .merge(staging.alias("s"), f"t.{merge_key} = s.{merge_key}")
- .whenMatchedUpdateAll()
+ .whenMatchedUpdateAll(condition=f"s.{order_column} >= t.{order_column}")
  .whenNotMatchedInsertAll()
  .execute())
 
-# Idempotent: rerun MERGE không tạo duplicate
+# Có thể rerun an toàn khi business key/order column ổn định và source đã dedup như trên
+# Nếu ModifiedDate có thể trùng cho cùng key, thêm SourceSequence/EventId làm tie-breaker
 # Watermark chỉ được update ở pipeline NGOÀI notebook này, sau khi MERGE thành công
 ```
 
@@ -1048,9 +1062,8 @@ target  = DeltaTable.forName(spark, target_table)
 |-----------|-----------|
 | **Watermark commit sau success** | Không update watermark trong notebook — chỉ update ở pipeline activity sau khi toàn bộ MERGE thành công |
 | **Fail Activity với context** | Thông báo lỗi phải chứa entity name và run ID để dễ debug |
-| **Idempotent MERGE** | Rerun pipeline vì lỗi không được tạo dữ liệu trùng |
+| **Retry-safe MERGE** | Dedup source theo business key + điều kiện xác định; `MERGE` không tự thân luôn idempotent |
 | **Batch Count 4–5** | Cân bằng giữa throughput và resource contention trên capacity |
 
 > [!TIP]
 > Tham khảo: [Metadata-driven pipeline tutorial](https://learn.microsoft.com/en-us/fabric/data-factory/tutorial-metadata-driven-pipeline) và [Pipeline expressions](https://learn.microsoft.com/en-us/fabric/data-factory/expression-language)
-

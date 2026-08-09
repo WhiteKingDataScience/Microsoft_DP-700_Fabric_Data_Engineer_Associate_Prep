@@ -673,7 +673,7 @@ D. Store checkpoints in a temporary directory that is cleared after each run
 > **Giải thích**:
 > - **(B) Đúng** — Mỗi streaming query **BẮT BUỘC** phải có checkpoint location riêng biệt. Checkpoint lưu trữ offset và state duy nhất cho từng query. Chia sẻ checkpoint giữa 2 queries sẽ gây lỗi hoặc data loss.
 > - **(A) Sai** — Chia sẻ checkpoint gây conflict metadata giữa hai queries.
-> - **(C) Sai** — Checkpoint là **BẮT BUỘC** (mandatory) cho fault tolerance.
+> - **(C) Sai trong production** — Muốn recover progress/state sau lỗi thì phải dùng durable checkpoint; mỗi query phải có checkpoint riêng. Một số sink thử nghiệm như console/memory có thể chạy không khai báo checkpoint, nhưng không cung cấp recovery bền vững và không phải thiết kế production.
 > - **(D) Sai** — Xóa checkpoint sau mỗi lần chạy sẽ khiến query xử lý lại toàn bộ dữ liệu từ đầu, mất khả năng resume.
 
 ---
@@ -692,7 +692,7 @@ D. Recreate the table with a different file format
 **✅ Correct Answer: B**
 
 > **Giải thích**:
-> - **(B) Đúng** — MERGE operations tạo nhiều small files trong Delta table. Lệnh `OPTIMIZE` hợp nhất (compaction) các small files thành files lớn hơn, cải thiện query performance đáng kể. Đây là best practice sau mọi MERGE lớn.
+> - **(B) Đúng trong scenario này** — Sau large MERGE, triệu chứng query chậm cần được xác nhận là small-file/scan problem; khi đúng, `OPTIMIZE` compact các file nhỏ. Không chạy `OPTIMIZE` máy móc sau mọi MERGE: hãy đo số/kích thước file và query scan trước.
 > - **(A) Sai** — Tăng cluster không giải quyết vấn đề small files.
 > - **(C) Sai** — Chuyển sang Parquet mất tất cả lợi ích của Delta (ACID, time-travel, MERGE).
 > - **(D) Sai** — Tạo lại bảng không cần thiết khi OPTIMIZE giải quyết được vấn đề.
@@ -790,8 +790,10 @@ D. Chạy `VACUUM RETAIN 0 HOURS` trước mỗi lần chạy
 
 **B.** Thiết kế **idempotent** (có thể rerun an toàn) yêu cầu:
 1. **Staging** — dữ liệu mới vào bảng staging riêng (tách khỏi target)
-2. **MERGE** — upsert từ staging vào target (MERGE tự nhiên là idempotent — cùng key sẽ update, không insert thêm)
+2. **MERGE có điều kiện xác định** — upsert từ staging đã dedup vào target theo unique business key; cùng input hợp lệ sẽ update đúng row thay vì insert thêm
 3. **Watermark commit cuối cùng** — chỉ update control table sau khi MERGE thành công
+
+> `MERGE` **không tự thân luôn idempotent**. Nếu source có nhiều row cùng match một target key, operation có thể lỗi/không xác định; nếu dùng nondeterministic values hoặc business rule khác nhau giữa các lần chạy, kết quả cũng có thể đổi. Công thức thi an toàn là: **dedup source + deterministic unique key + điều kiện update ổn định + commit watermark sau success**. Xem [Delta MERGE semantics](https://learn.microsoft.com/en-us/azure/databricks/delta/merge#merge-operation-semantics).
 
 Tham khảo: [Delta Lake MERGE](https://learn.microsoft.com/en-us/fabric/data-engineering/lakehouse-streaming-write)
 
@@ -980,4 +982,3 @@ latest=df.withColumn('rn',F.row_number().over(w)).filter('rn=1').drop('rn')
 - [Structured Streaming overview](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview)
 
 ---
-

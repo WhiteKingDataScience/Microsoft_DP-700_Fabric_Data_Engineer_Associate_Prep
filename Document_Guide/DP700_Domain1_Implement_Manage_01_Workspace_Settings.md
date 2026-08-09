@@ -49,10 +49,12 @@ Workspace trong Microsoft Fabric là **đơn vị tổ chức cơ bản** (funda
 |---------|-----------------|
 | **Admin** | Toàn quyền: quản lý settings, thêm/xóa users, quản lý items, xóa workspace |
 | **Member** | Thêm members (trừ Admin), tạo/chỉnh sửa/xóa items, publish apps |
-| **Contributor** | Tạo/chỉnh sửa/xóa items nhưng KHÔNG thể share hoặc thay đổi permissions |
+| **Contributor** | Tạo/chỉnh sửa/xóa items; workspace role này không tự cấp quyền Reshare, nhưng Contributor vẫn có thể share item nếu được cấp **Reshare** riêng ở item |
 | **Viewer** | Chỉ xem items, KHÔNG thể chỉnh sửa |
 
 > ⚠️ **Lưu ý thi:** Admin, Member, và Contributor đều có quyền **bypass OneLake security**. OneLake security chủ yếu áp dụng cho **Viewer** role.
+
+> **ReadData khác ReadAll:** Viewer có thể đọc Warehouse/Lakehouse tables qua **SQL analytics endpoint** (`ReadData`) nhưng workspace role này không tự cấp đọc file/table qua **OneLake APIs, Spark hoặc Lakehouse explorer** (`ReadAll`). Xem [Roles in workspaces](https://learn.microsoft.com/en-us/fabric/fundamentals/roles-workspaces).
 
 ---
 
@@ -403,10 +405,10 @@ D. Default Spark Pool
 **Đáp án: B**
 
 **Giải thích:**
-- **Custom Pool** cung cấp **always-on availability** cho đến khi manually paused → đảm bảo high availability cho production
+- **Custom Pool** cung cấp runtime **always-on** cho đến khi manually paused → phù hợp production cần tránh cold-start. Đây là bảo đảm về trạng thái pool/readiness, không phải cam kết SLA “high availability” cho toàn dịch vụ.
 - **Starter Pool** (A, C) tự động de-provision sau 20 phút không hoạt động, KHÔNG thể disable auto-deprovisioning hoặc tăng timeout → không phù hợp cho production
 - **Default Spark Pool** (D) là Spark compute, không phải Airflow runtime
-- Với pipeline chạy mỗi 4 giờ, Custom Pool đảm bảo runtime luôn sẵn sàng khi DAG cần chạy
+- Với pipeline chạy mỗi 4 giờ nhưng yêu cầu không chờ resume runtime, Custom Pool là lựa chọn phù hợp nhất khi pool không bị pause; vẫn phải thiết kế retry/monitoring cho lỗi dịch vụ hoặc capacity.
 
 </details>
 

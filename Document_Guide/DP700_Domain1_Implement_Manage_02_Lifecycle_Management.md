@@ -12,6 +12,8 @@
 > **Tài liệu ôn thi DP-700: Fabric Data Engineer Associate**
 > Phần này bao gồm toàn bộ kiến thức về quản lý vòng đời (lifecycle management) trong Microsoft Fabric.
 
+> **Tham khảo chính:** [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) và [Plan CI/CD for Microsoft Fabric solutions](https://learn.microsoft.com/en-us/fabric/fundamentals/understand-best-practices-fabric-cicd).
+
 ---
 
 ## 📋 MỤC LỤC
@@ -28,7 +30,7 @@
 
 ### 1.1 Application Lifecycle Management (ALM) trong Fabric
 
-ALM trong Microsoft Fabric bao gồm hai trụ cột chính:
+ALM trong Microsoft Fabric bao gồm hai trụ cột chính. Xem thêm [tổng quan CI/CD của Fabric](https://learn.microsoft.com/en-us/fabric/fundamentals/understand-best-practices-fabric-cicd) để hiểu cách Git, deployment pipelines và các lựa chọn tự động hóa kết hợp với nhau:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -59,20 +61,20 @@ ALM trong Microsoft Fabric bao gồm hai trụ cột chính:
 
 ### 2.1 Git Integration là gì?
 
-Git Integration trong Fabric cho phép kết nối workspace với **Git repository** để quản lý version control cho các Fabric items.
+Git Integration trong Fabric cho phép kết nối workspace với **Git repository** để quản lý version control cho các Fabric items. Xem [Fabric Git integration overview](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/intro-to-git-integration) và [Git integration process/permissions](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process).
 
 ### 2.2 Git Providers được hỗ trợ (cập nhật 08/2026)
 
 | Provider | Trạng thái |
 |---|---|
-| **Azure DevOps** | Hỗ trợ, cloud-based only |
-| **GitHub** | Hỗ trợ, cloud-based only |
-| **GitHub Enterprise** | Hỗ trợ, cloud-based only |
+| [**Azure DevOps**](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#azure-devops-limitations) | Hỗ trợ, cloud-based only |
+| [**GitHub**](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#github-limitations) | Hỗ trợ, cloud-based only |
+| [**GitHub Enterprise**](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#github-enterprise-limitations) | Hỗ trợ theo các giới hạn riêng |
 | Bitbucket / GitLab | Không có native Fabric Git integration trong support matrix hiện tại |
 
 ### 2.3 Supported items: học nguyên tắc, không học thuộc bảng tĩnh
 
-Support matrix thay đổi nhanh. Các nhóm Data Engineering/Data Factory hiện hỗ trợ rộng hơn trước, gồm Lakehouse, Notebook, Environment, Spark Job Definition, Pipeline, Dataflow Gen2, Copy Job và nhiều item mới/Preview.
+Support matrix thay đổi nhanh. Các nhóm Data Engineering/Data Factory hiện hỗ trợ rộng hơn trước, gồm Lakehouse, Notebook, Environment, Spark Job Definition, Pipeline, Dataflow Gen2, Copy Job và nhiều item mới/Preview. Hãy kiểm tra [giới hạn và supported items của Git integration](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process) trước khi học thuộc một trường hợp cụ thể.
 
 **Nguyên tắc bền vững để làm bài:**
 - Git lưu **item definition/metadata/source**, không phải raw data trong OneLake.
@@ -82,11 +84,11 @@ Support matrix thay đổi nhanh. Các nhóm Data Engineering/Data Factory hiệ
 
 ### 2.3.1 Auto-binding và dependencies — kiến thức 2026 đáng học
 
-Khi Git update/deploy tạo item ở workspace đích, Fabric cố **auto-bind** các tham chiếu dependency trong cùng workspace để item mới trỏ tới counterpart phù hợp. Với dependency xuyên workspace hoặc item chưa hỗ trợ auto-binding, có thể cần cấu hình sau deploy; **Variable library/item reference** giúp tránh hard-code ID theo môi trường.
+Khi Git update/deploy tạo item ở workspace đích, Fabric cố **auto-bind** các tham chiếu dependency trong cùng workspace để item mới trỏ tới counterpart phù hợp. Với dependency xuyên workspace hoặc item chưa hỗ trợ auto-binding, có thể cần cấu hình sau deploy; **[Variable library](https://learn.microsoft.com/en-us/fabric/cicd/variable-library/tutorial-variable-library)/item reference** giúp tránh hard-code ID theo môi trường. Xem bảng chi tiết trong [Understand dependency binding in cross-workspace deployment](https://learn.microsoft.com/en-us/fabric/cicd/cross-workspace-dependency-binding).
 
 ### 2.4 Cách kết nối Workspace với Git
 
-**Bước 1: Prerequisites**
+**Bước 1: Prerequisites** — đối chiếu [ma trận quyền Git Integration](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#required-fabric-permissions-for-popular-actions) vì quyền phụ thuộc thao tác (connect, update, commit, switch branch).
 - **Chỉ Workspace Admin** có thể kết nối, đồng bộ ban đầu hoặc ngắt kết nối workspace với Git. Sau khi kết nối, Member/Contributor có đủ Write và Git permissions có thể commit/update; branch switching cần workspace setting tương ứng.
 - Git repository phải tồn tại trước khi kết nối
 - Tenant setting "Users can sync workspace items with their Git repositories" phải được **enabled**
@@ -109,7 +111,7 @@ Workspace settings > Git integration
 
 ### 2.5 Bi-directional Sync
 
-Git Integration hỗ trợ **đồng bộ hai chiều**:
+Git Integration hỗ trợ **đồng bộ hai chiều**. Quy trình initial sync, commit và update được mô tả trong [Connect and sync](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#connect-and-sync):
 
 ```
                     ┌──────────────┐
@@ -132,7 +134,7 @@ Git Integration hỗ trợ **đồng bộ hai chiều**:
 
 ### 2.6 Branching Strategy
 
-**Recommended Pattern:**
+**Recommended Pattern:** Tham khảo [Development process in Microsoft Fabric](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/manage-branches) để chọn branch/workspace phù hợp; mỗi workspace chỉ kết nối trực tiếp với một branch tại một thời điểm.
 
 ```
 main (Production)
@@ -153,7 +155,7 @@ main (Production)
 
 ### 2.7 Conflict Resolution
 
-Khi có conflict (thay đổi ở cả workspace và Git):
+Khi có conflict (thay đổi ở cả workspace và Git), xem các trạng thái `Conflict`, `Uncommitted changes` và quy trình [Git status/sync](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#git-status):
 
 1. **Workspace wins:** Giữ phiên bản workspace, commit đè lên Git
 2. **Git wins:** Giữ phiên bản Git, update workspace từ Git
@@ -161,7 +163,7 @@ Khi có conflict (thay đổi ở cả workspace và Git):
 
 ### 2.8 Best Practices cho Git Integration
 
-1. **Sử dụng branching strategy** rõ ràng (GitFlow hoặc trunk-based)
+1. **Sử dụng branching strategy** rõ ràng (GitFlow hoặc trunk-based); xem thêm [Fabric CI/CD best practices](https://learn.microsoft.com/en-us/fabric/fundamentals/understand-best-practices-fabric-cicd)
 2. **Commit thường xuyên** với messages có ý nghĩa
 3. **KHÔNG commit** sensitive data (credentials, connection strings)
 4. **Git là source of truth** - workspace chỉ là môi trường làm việc
@@ -173,17 +175,17 @@ Khi có conflict (thay đổi ở cả workspace và Git):
 
 ### 3.1 Database Projects là gì?
 
-**Database Projects** (SQL Database Projects) trong Fabric cho phép quản lý schema của SQL databases dưới dạng code (schema-as-code), hỗ trợ offline development và CI/CD.
+**Database Projects** (SQL Database Projects) trong Fabric cho phép quản lý schema của SQL databases dưới dạng code (schema-as-code), hỗ trợ offline development và CI/CD. Đọc [Fabric SQL database source control](https://learn.microsoft.com/en-us/fabric/database/sql/source-control) để biết chính xác object definition nào được serialize vào Git.
 
 ### 3.2 Công cụ và Extensions cần thiết
 
 | Công cụ | Mục đích |
 |---------|----------|
-| **Visual Studio Code** | IDE chính cho database development |
-| **MSSQL Extension** | Kết nối và query SQL databases |
-| **SQL Database Projects Extension** | Tạo và quản lý .sqlproj files |
-| **DacFx (Data-Tier Application Framework)** | Build và deploy database packages |
-| **SqlPackage** | CLI tool cho database deployment |
+| [**Visual Studio Code**](https://code.visualstudio.com/) | IDE chính cho database development |
+| [**MSSQL Extension**](https://learn.microsoft.com/en-us/sql/tools/visual-studio-code-extensions/mssql/mssql-extension-visual-studio-code?view=sql-server-ver17) | Kết nối và query SQL databases |
+| [**SQL Database Projects Extension**](https://learn.microsoft.com/en-us/sql/tools/visual-studio-code-extensions/sql-database-projects/getting-started-sql-database-projects-extension?view=sql-server-ver17) | Tạo và quản lý `.sqlproj` files |
+| [**DacFx (Data-Tier Application Framework)**](https://learn.microsoft.com/en-us/sql/tools/sql-database-projects/sql-projects-tools?view=sql-server-ver17) | Build và deploy database packages |
+| [**SqlPackage**](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage?view=sql-server-ver17) | CLI tool cho database deployment |
 
 ### 3.3 Workflow của Database Projects
 
@@ -246,7 +248,7 @@ GO
 
 ### 3.5 Tích hợp với Git (Source Control)
 
-**Convert live database to code:**
+**Convert live database to code:** Xem [Add the Fabric SQL database to source control](https://learn.microsoft.com/en-us/fabric/database/sql/source-control#add-the-fabric-sql-database-to-source-control) để thực hành serialize object definitions:
 1. Kết nối Fabric SQL Database với Git repository
 2. Fabric tự động serialize database objects thành SQL scripts
 3. Mỗi object (table, view, procedure) = một file .sql trong Git
@@ -258,7 +260,7 @@ GO
 
 ### 3.6 Build và Deploy
 
-**Build .dacpac package:**
+**Build .dacpac package:** Theo [SQL Database Projects extension](https://learn.microsoft.com/en-us/sql/tools/visual-studio-code-extensions/sql-database-projects/getting-started-sql-database-projects-extension?view=sql-server-ver17#build-and-publish), Build vừa validate project vừa tạo file `.dacpac`:
 ```bash
 # Sử dụng dotnet CLI
 dotnet build MyDatabaseProject.sqlproj
@@ -266,7 +268,7 @@ dotnet build MyDatabaseProject.sqlproj
 # Output: bin/Debug/MyDatabaseProject.dacpac
 ```
 
-**Deploy với SqlPackage:**
+**Deploy với SqlPackage:** Xem [SqlPackage Publish](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-publish?view=sql-server-ver17) để biết các tham số `/Action:Publish`, `/SourceFile` và publish profile:
 ```bash
 # Deploy dacpac tới Fabric SQL Database
 SqlPackage /Action:Publish \
@@ -276,7 +278,7 @@ SqlPackage /Action:Publish \
 
 ### 3.7 CI/CD Integration
 
-**Azure DevOps Pipeline example:**
+**Azure DevOps Pipeline example:** Quy trình build/publish tương tự được minh họa trong [Create and deploy a SQL project](https://learn.microsoft.com/en-us/sql/tools/sql-database-projects/tutorials/create-deploy-sql-project?view=sql-server-ver17):
 ```yaml
 # azure-pipelines.yml
 trigger:
@@ -325,7 +327,7 @@ steps:
 
 ### 3.9 Database Projects cho Fabric Warehouse (Preview)
 
-Đừng giới hạn khái niệm **database project** vào Fabric SQL Database. Fabric Warehouse source control hiện cũng có thể serialize schema thành **SQL database project** (Preview):
+Đừng giới hạn khái niệm **database project** vào Fabric SQL Database. [Fabric Warehouse source control](https://learn.microsoft.com/en-us/fabric/data-warehouse/source-control) hiện cũng có thể serialize schema thành **SQL database project** (Preview):
 
 - mỗi table/view/procedure/function definition được lưu thành source `.sql`;
 - **table data không được đưa vào Git/project**;
@@ -340,7 +342,7 @@ steps:
 
 ### 4.1 Deployment pipeline dùng để làm gì?
 
-**Deployment pipelines** là Fabric-native release management: so sánh và promote item giữa các environment/stage như Dev → Test → Prod. Đừng nhầm với Git:
+**[Deployment pipelines](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/intro-to-deployment-pipelines)** là Fabric-native release management: so sánh và promote item giữa các environment/stage như Dev → Test → Prod. Đừng nhầm với Git:
 
 - **Git integration** = version control, branch, PR, source of truth.
 - **Deployment pipeline** = promote item giữa workspace/stage, compare/diff, selected deployment.
@@ -348,22 +350,22 @@ steps:
 
 ### 4.2 Stage và workspace
 
-Dev/Test/Prod là pattern phổ biến, nhưng không nên học thuộc một số lượng stage cố định như một “fact thi”. Hãy tập trung vào quan hệ:
+Dev/Test/Prod là pattern phổ biến, nhưng không nên học thuộc một số lượng stage cố định như một “fact thi”. Theo [Get started with deployment pipelines](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/get-started-with-deployment-pipelines), pipeline có thể có từ 2 đến 10 stage. Hãy tập trung vào quan hệ:
 
 `Source stage/workspace → compare → select items → deploy → target stage/workspace`
 
-Khi deploy selected items:
+Khi deploy selected items (xem [Selective deployment và paired items](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/get-started-with-deployment-pipelines#step-6-deploy-content-from-one-stage-to-another)):
 - Paired item ở target có thể được **ghi đè/cập nhật** theo source.
 - Item chỉ tồn tại ở target **không tự động bị xóa** chỉ vì deploy selected content.
 - Với SQL Database, Fabric tính schema diff/T-SQL cần thiết; data hiện hữu được giữ nếu thay đổi an toàn. Thay đổi có nguy cơ data loss có thể yêu cầu xử lý thủ công.
 
 ### 4.3 Permissions — tránh overclaim “phải Admin mọi stage”
 
-Permission phụ thuộc thao tác và trạng thái target. Theo tài liệu hiện hành, deploy từ source cần ít nhất quyền phù hợp (thường **Contributor trở lên**); nếu target workspace/item đã tồn tại, người deploy cũng cần quyền phù hợp ở target. Admin vẫn cần cho các thao tác quản trị workspace/pipeline nhất định, nhưng **không học quy tắc sai rằng mọi deployment đều bắt buộc Workspace Admin trên tất cả stages**.
+Permission phụ thuộc thao tác và trạng thái target. Hãy đối chiếu [Get started with deployment pipelines – prerequisites và permissions](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/get-started-with-deployment-pipelines) trước khi trả lời câu hỏi quyền. Người deploy cũng cần quyền phù hợp ở target; Admin cần cho các thao tác quản trị workspace/pipeline nhất định, nhưng **không học quy tắc sai rằng mọi deployment đều bắt buộc Workspace Admin trên tất cả stages**.
 
 ### 4.4 Deployment rules — support matrix hiện tại
 
-Deployment rules **không phải generic connection-rewrite engine cho mọi Fabric item**.
+Deployment rules **không phải generic connection-rewrite engine cho mọi Fabric item**. Xem [Create deployment rules](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/create-rules) để kiểm tra item/rule combination đang được hỗ trợ.
 
 | Rule | Item hiện được hỗ trợ điển hình |
 |---|---|
@@ -376,7 +378,7 @@ Deployment rules **không phải generic connection-rewrite engine cho mọi Fab
 
 ### 4.5 Variable library — bổ sung rất quan trọng cho CI/CD 2026
 
-Variable library là một Fabric item chứa variables và nhiều **value sets** (ví dụ `dev`, `test`, `prod`). Mỗi environment/stage có thể active value set khác nhau.
+Variable library là một Fabric item chứa variables và nhiều **value sets** (ví dụ `dev`, `test`, `prod`). Mỗi environment/stage có thể active value set khác nhau. Xem [tutorial Variable libraries](https://learn.microsoft.com/en-us/fabric/cicd/variable-library/tutorial-variable-library) và [Variable library integration with pipelines](https://learn.microsoft.com/en-us/fabric/data-factory/variable-library-integration-with-data-pipelines).
 
 Use case điển hình:
 - `SourceWorkspaceId`
@@ -389,7 +391,7 @@ Pipeline có thể dùng Library variables trong dynamic content; notebook có t
 
 ### 4.6 SQL Database trong deployment pipeline
 
-Fabric SQL Database được quản lý theo **schema-as-code**:
+Fabric SQL Database được quản lý theo **schema-as-code**; xem [SQL Database deployment pipelines](https://learn.microsoft.com/en-us/fabric/database/sql/deployment-pipelines):
 1. Source control tạo/duy trì SQL project.
 2. Update/deploy build project → `.dacpac`/SqlPackage logic → tính differential schema change.
 3. Database-level settings như collation/compatibility level hiện không nằm trong source control/deployment pipeline integration.
@@ -397,12 +399,12 @@ Fabric SQL Database được quản lý theo **schema-as-code**:
 
 ### 4.7 Warehouse và SQL database projects
 
-Fabric Warehouse source control hiện hỗ trợ mô hình **SQL database project** (Preview): mỗi SQL object thành file `.sql`; **table data và SQL security features không nằm trong project**. Vì vậy, nếu scenario hỏi “version schema vs version data”, câu trả lời là version **schema/code**, không phải warehouse data.
+Fabric Warehouse source control hiện hỗ trợ mô hình **SQL database project** (Preview); tài liệu [Warehouse source control](https://learn.microsoft.com/en-us/fabric/data-warehouse/source-control) nêu rõ mỗi SQL object thành file `.sql`, còn **table data và SQL security features không nằm trong project**. Vì vậy, nếu scenario hỏi “version schema vs version data”, câu trả lời là version **schema/code**, không phải warehouse data.
 
 ### 4.8 Git + Deployment Pipeline + Variable Library: mental model
 
 ```text
-Git repo
+Git repo (xem [CI/CD workflow options in Fabric](https://learn.microsoft.com/en-us/fabric/cicd/manage-deployment))
   └─ version item definitions / SQL projects
        ↓ update/sync
 Dev workspace
@@ -741,13 +743,23 @@ D. Không, nhưng chỉ khi deployment pipeline có 10 stages
 
 - [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 - [Fabric Git integration overview](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/intro-to-git-integration)
+- [Git integration process, permissions and limitations](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process)
+- [Development process and branch/workspace strategy](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/manage-branches)
+- [Cross-workspace dependency binding](https://learn.microsoft.com/en-us/fabric/cicd/cross-workspace-dependency-binding)
 - [Fabric CI/CD best practices](https://learn.microsoft.com/en-us/fabric/fundamentals/understand-best-practices-fabric-cicd)
 - [Deployment pipelines](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/intro-to-deployment-pipelines)
+- [Get started with deployment pipelines](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/get-started-with-deployment-pipelines)
 - [Deployment rules](https://learn.microsoft.com/en-us/fabric/cicd/deployment-pipelines/create-rules)
 - [Variable libraries](https://learn.microsoft.com/en-us/fabric/cicd/variable-library/get-started-variable-libraries)
+- [Variable libraries tutorial](https://learn.microsoft.com/en-us/fabric/cicd/variable-library/tutorial-variable-library)
 - [SQL Database source control](https://learn.microsoft.com/en-us/fabric/database/sql/source-control)
 - [SQL Database deployment pipelines](https://learn.microsoft.com/en-us/fabric/database/sql/deployment-pipelines)
+- [SQL Database Projects extension for VS Code](https://learn.microsoft.com/en-us/sql/tools/visual-studio-code-extensions/sql-database-projects/getting-started-sql-database-projects-extension?view=sql-server-ver17)
+- [SQL projects tools: DacFx, SqlPackage and VS Code](https://learn.microsoft.com/en-us/sql/tools/sql-database-projects/sql-projects-tools?view=sql-server-ver17)
+- [SqlPackage Publish](https://learn.microsoft.com/en-us/sql/tools/sqlpackage/sqlpackage-publish?view=sql-server-ver17)
+- [Create and deploy a SQL project](https://learn.microsoft.com/en-us/sql/tools/sql-database-projects/tutorials/create-deploy-sql-project?view=sql-server-ver17)
 - [Warehouse source control (Preview)](https://learn.microsoft.com/en-us/fabric/data-warehouse/source-control)
+- [CI/CD workflow options in Fabric](https://learn.microsoft.com/en-us/fabric/cicd/manage-deployment)
 
 ---
 
@@ -803,4 +815,3 @@ D. Monitoring Hub
 **B.** Deployment pipeline xử lý promotion giữa các stage. Với pipeline/configuration hiện đại, **Variable library** là lựa chọn chính để giữ value sets theo Dev/Test/Prod; deployment rules chỉ dùng khi đúng item/rule combination được support. Git quản lý version history/branches, không phải environment promotion.
 
 </details>
-

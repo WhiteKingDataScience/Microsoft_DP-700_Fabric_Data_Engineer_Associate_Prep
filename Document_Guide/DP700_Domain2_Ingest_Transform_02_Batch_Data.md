@@ -1123,7 +1123,7 @@ D. M language trong deployment pipeline
 
 ### Lab 1 — Full Load Và Incremental MERGE
 
-**Mục tiêu:** Hiểu sự khác biệt giữa full load (overwrite) và incremental load (MERGE), và tính idempotent của MERGE.
+**Mục tiêu:** Hiểu sự khác biệt giữa full load (overwrite) và incremental load (MERGE), đồng thời biết điều kiện để một MERGE có thể rerun an toàn.
 
 ```python
 from pyspark.sql import functions as F
@@ -1166,7 +1166,8 @@ target = DeltaTable.forName(spark, "lab.orders")
 ```
 
 **Điểm quan trọng:**
-- MERGE là **idempotent** — chạy lại cùng source sẽ cho kết quả giống nhau
+- Trong ví dụ này, MERGE có thể rerun an toàn vì source có **một row duy nhất cho mỗi `OrderId`**, match key xác định, và update condition ổn định
+- Ngoài thực tế phải dedup source trước MERGE; nhiều source row cùng match một target row có thể làm MERGE lỗi hoặc có kết quả không xác định
 - Condition `s.ModifiedDate >= t.ModifiedDate` ngăn dữ liệu cũ ghi đè dữ liệu mới hơn
 
 ---
@@ -1280,4 +1281,3 @@ Managed operational DB replication→ Mirroring
 - [Copy activity](https://learn.microsoft.com/en-us/fabric/data-factory/copy-data-activity)
 
 ---
-

@@ -76,11 +76,12 @@ Microsoft Fabric sử dụng mô hình bảo mật **đa lớp** (layered securi
 | Quyền | Admin | Member | Contributor | Viewer |
 |--------|:-----:|:------:|:-----------:|:------:|
 | Xem items | ✅ | ✅ | ✅ | ✅ |
-| Đọc dữ liệu | ✅ | ✅ | ✅ | ✅ |
+| Đọc Warehouse/Lakehouse qua SQL endpoint (`ReadData`) | ✅ | ✅ | ✅ | ✅ |
+| Đọc qua OneLake APIs/Spark/Lakehouse explorer (`ReadAll`) | ✅ | ✅ | ✅ | ❌ |
 | Tạo items | ✅ | ✅ | ✅ | ❌ |
 | Chỉnh sửa items | ✅ | ✅ | ✅ | ❌ |
 | Xóa items | ✅ | ✅ | ✅ | ❌ |
-| Share items | ✅ | ✅ | ❌ | ❌ |
+| Share items | ✅ | ✅ | Chỉ khi có **Reshare** riêng | Chỉ khi có **Reshare** riêng |
 | Thêm members (không phải Admin) | ✅ | ✅ | ❌ | ❌ |
 | Publish apps | ✅ | ✅ | ❌ | ❌ |
 | Quản lý permissions | ✅ | ❌ | ❌ | ❌ |
@@ -119,6 +120,8 @@ Content-Type: application/json
 4. **Admin role** chỉ cho workspace administrators
 
 > ⚠️ **Quan trọng cho thi:** Admin, Member, Contributor roles **bypass OneLake Security**. Nếu bạn muốn áp dụng granular security (RLS, CLS), user phải có **Viewer** role hoặc chỉ có specific item-level permissions.
+
+> **Nuance dễ ra bẫy:** Contributor/Viewer không có quyền Reshare chỉ nhờ workspace role, nhưng vẫn có thể share một item nếu được cấp **Reshare** ở item đó. Vì vậy hãy tách hai câu hỏi: “workspace role mặc định cho phép gì?” và “user còn có item permission nào?”. Xem [Roles in workspaces](https://learn.microsoft.com/en-us/fabric/fundamentals/roles-workspaces).
 
 ---
 
@@ -189,6 +192,75 @@ RLS/CLS/OLS có thể xuất hiện trong **OneLake security**, **SQL security**
 > [!IMPORTANT]
 > Không dùng pseudo-syntax kiểu `@user_attribute.region` nếu đề/tài liệu không định nghĩa cơ chế mapping đó. Với DP-700, điều quan trọng là chọn **đúng layer và engine**, không phải ghi nhớ một cú pháp giả định.
 
+**OneLake RLS rule mẫu** nhập trong `Manage OneLake security > Role > Table > Row security`:
+
+```sql
+SELECT *
+FROM dbo.FactSales
+WHERE Region IN ('APAC', 'ANZ')
+  AND Amount > 0
+```
+
+Rule phải tham chiếu đúng schema/table/column của Delta table và dùng subset syntax được hỗ trợ. OneLake RLS hiện phù hợp với static predicate theo role; không tự suy diễn thuộc tính người dùng nếu chưa có cơ chế mapping được tài liệu hóa.
+
+#### 4.2.1 SQL RLS end-to-end trong Warehouse/SQL analytics endpoint
+
+Ví dụ dưới đây lọc `dbo.FactSales` theo email của nhân viên bán hàng. Người dùng thường chỉ thấy row có `SalesRep = USER_NAME()`; manager được xem tất cả.
+
+```sql
+-- Bước 1: schema riêng để chứa security objects
+CREATE SCHEMA Security;
+GO
+
+-- Bước 2: inline table-valued function trả về 1 khi row được phép hiển thị
+CREATE FUNCTION Security.tvf_SalesPredicate
+(
+    @SalesRep varchar(100)
+)
+RETURNS TABLE
+WITH SCHEMABINDING
+AS
+RETURN
+(
+    SELECT 1 AS IsAllowed
+    WHERE @SalesRep = USER_NAME()
+       OR USER_NAME() = 'manager@contoso.com'
+);
+GO
+
+-- Bước 3: gắn filter predicate vào cột SalesRep của target table
+CREATE SECURITY POLICY Security.SalesFilter
+ADD FILTER PREDICATE Security.tvf_SalesPredicate(SalesRep)
+ON dbo.FactSales
+WITH (STATE = ON);
+GO
+
+-- Bước 4: cấp quyền query; GRANT/DENY tự tạo database principal trong Fabric
+-- nhưng user vẫn cần Fabric item Read để CONNECT tới Warehouse/SQL endpoint.
+GRANT SELECT ON dbo.FactSales TO [sales1@contoso.com];
+GRANT SELECT ON dbo.FactSales TO [manager@contoso.com];
+GO
+
+-- Bước 5: đăng nhập bằng từng account và kiểm thử identity + kết quả
+SELECT USER_NAME() AS CurrentDatabaseUser;
+SELECT SaleId, SalesRep, Amount
+FROM dbo.FactSales;
+GO
+```
+
+Tạm tắt, bật lại hoặc tháo policy để bảo trì:
+
+```sql
+ALTER SECURITY POLICY Security.SalesFilter WITH (STATE = OFF);
+ALTER SECURITY POLICY Security.SalesFilter WITH (STATE = ON);
+
+-- Muốn sửa/drop predicate function phải tháo policy ràng buộc trước.
+DROP SECURITY POLICY Security.SalesFilter;
+DROP FUNCTION Security.tvf_SalesPredicate;
+```
+
+> **Bẫy rất quan trọng:** SQL RLS security policy áp dụng cả với database owner/elevated SQL user nếu predicate không viết exception. Ngược lại, **OneLake RLS** bị bypass bởi workspace Admin/Member/Contributor. Cùng tên “RLS” nhưng engine/layer khác nhau dẫn tới behavior khác nhau. Xem [SQL RLS](https://learn.microsoft.com/en-us/fabric/data-warehouse/row-level-security) và [OneLake RLS](https://learn.microsoft.com/en-us/fabric/onelake/security/row-level-security).
+
 ### 4.3 Column-Level Security (CLS)
 
 **Mục tiêu:** user thấy table nhưng không thấy một số **columns** nhạy cảm.
@@ -196,6 +268,54 @@ RLS/CLS/OLS có thể xuất hiện trong **OneLake security**, **SQL security**
 - OneLake CLS định nghĩa allowed columns trong OneLake role.
 - SQL CLS dùng column-level permissions, ví dụ chỉ `GRANT SELECT` trên cột cho phép.
 - OneLake RLS + CLS trên cùng table phải được thiết kế **trong cùng một role**; combination tách chúng thành nhiều role không được hỗ trợ có thể gây lỗi query.
+
+#### 4.3.1 SQL CLS end-to-end
+
+Thiết kế least privilege dễ kiểm soát nhất là: user **không có workspace role/ReadData rộng**, được share Warehouse bằng **item Read** để có thể connect, rồi chỉ được `GRANT SELECT` trên các cột cần dùng.
+
+```sql
+-- User/group được đọc các cột nghiệp vụ, không được đọc CreditCard.
+GRANT SELECT ON dbo.Customers
+(
+    CustomerId,
+    FirstName,
+    LastName,
+    Phone,
+    Email
+)
+TO [SalesReaders@contoso.com];
+GO
+
+-- Thành công
+SELECT CustomerId, FirstName, LastName, Phone, Email
+FROM dbo.Customers;
+
+-- Thất bại vì SELECT * bao gồm CreditCard không được cấp quyền
+SELECT *
+FROM dbo.Customers;
+GO
+
+-- Thu hồi column grant nếu không còn nhu cầu
+REVOKE SELECT ON dbo.Customers
+(
+    CustomerId,
+    FirstName,
+    LastName,
+    Phone,
+    Email
+)
+FROM [SalesReaders@contoso.com];
+GO
+```
+
+Kiểm tra effective SQL permissions của account đang đăng nhập:
+
+```sql
+SELECT *
+FROM sys.fn_my_permissions('dbo.Customers', 'Object');
+```
+
+> Nếu user đã nhận broad `ReadData`/`SELECT` qua role hoặc item permission khác, một column-level `GRANT` hẹp không tự thu hồi quyền rộng đó. Luôn kiểm tra **mọi đường cấp quyền** và tránh overlapping broad grants. Xem [SQL granular permissions](https://learn.microsoft.com/en-us/fabric/data-warehouse/sql-granular-permissions) và [Column-level security](https://learn.microsoft.com/en-us/fabric/data-warehouse/column-level-security).
 
 ### 4.4 Object-Level / Table-Folder Security
 
@@ -427,7 +547,7 @@ D. Remove the user's workspace access entirely
 **Giải thích:**
 - **Contributor** role **bypass** OneLake Security → bất kỳ security nào applied ở data level đều bị ignored
 - Giải pháp đúng: **Downgrade** role xuống **Viewer** → OneLake Security được enforce → apply folder/table-level security để ẩn fact_payroll
-- **(A)** RLS sẽ bị bypass vì user là Contributor
+- **(A)** Nếu đây là **OneLake RLS**, policy sẽ bị bypass vì user là Contributor. SQL RLS là security layer khác và có behavior khác, nhưng không giải quyết yêu cầu OneLake access-path trong scenario này.
 - **(C)** DDM cũng bị bypass bởi Contributor
 - **(D)** Quá extreme, user cần truy cập workspace cho các items khác
 - Key principle: OneLake Security chỉ effective cho Viewer role hoặc item-level shared users
@@ -713,6 +833,9 @@ OneLake security hiện có granular **ReadWrite** cho supported items/scenarios
 - [OneLake RLS](https://learn.microsoft.com/en-us/fabric/onelake/security/row-level-security)
 - [OneLake CLS](https://learn.microsoft.com/en-us/fabric/onelake/security/column-level-security)
 - [OneLake security best practices](https://learn.microsoft.com/en-us/fabric/onelake/security/best-practices-secure-data-in-onelake)
+- [SQL row-level security](https://learn.microsoft.com/en-us/fabric/data-warehouse/row-level-security)
+- [SQL column-level security](https://learn.microsoft.com/en-us/fabric/data-warehouse/column-level-security)
+- [SQL granular permissions](https://learn.microsoft.com/en-us/fabric/data-warehouse/sql-granular-permissions)
 - [Dynamic Data Masking](https://learn.microsoft.com/en-us/fabric/data-warehouse/dynamic-data-masking)
 - [Information protection](https://learn.microsoft.com/en-us/fabric/governance/information-protection)
 - [Protection policies](https://learn.microsoft.com/en-us/fabric/governance/protection-policies-overview)
@@ -793,7 +916,9 @@ Bước 1: Tạo workspace "Security-Lab" với hai Lakehouse:
 
 Bước 2: Tạo 2 tài khoản test:
   - User A: gán Contributor trên workspace
-  - User B: gán Viewer + OneLake role chỉ phạm vi thư mục "Sales"
+  - User B: không có elevated workspace role; cấp item Read trên Lakehouse,
+            Read/Execute trên một notebook test riêng,
+            và OneLake role chỉ phạm vi dữ liệu "Sales"
 ```
 
 **Kiểm tra User A (Contributor):**
@@ -806,7 +931,7 @@ df_payroll = spark.read.table("lakehouse_payroll.payroll_data") # ✅ Có thể 
 # Kết luận: Contributor bypass OneLake security
 ```
 
-**Kiểm tra User B (Viewer + OneLake role = Sales only):**
+**Kiểm tra User B (item-level access + OneLake role = Sales only):**
 
 ```python
 # User B đăng nhập và cố đọc Payroll
@@ -816,12 +941,11 @@ df_payroll = spark.read.table("lakehouse_payroll.payroll_data") # ❌ Bị block
 
 **Điểm cần ghi chép sau lab:**
 
-| Phương thức truy cập | User A (Contributor) | User B (Viewer + Role) |
+| Phương thức truy cập | User A (Contributor) | User B (item access + OneLake role) |
 |---------------------|---------------------|----------------------|
 | Spark notebook | Tất cả data | Chỉ Sales data |
 | SQL analytics endpoint | Tất cả data | Chỉ Sales data |
 | OneLake shortcut | Tất cả data | Chỉ Sales data |
 
 > [!NOTE]
-> Enforcement và limitations có thể khác nhau giữa Spark, SQL endpoint, và shortcut path. Luôn kiểm tra theo từng access path riêng biệt. Tham khảo: [OneLake security per engine](https://learn.microsoft.com/en-us/fabric/onelake/security/onelake-security-overview)
-
+> Workspace Viewer role không tự cho phép chạy notebook. Nếu muốn test bằng Spark, phải cấp `Execute` trên notebook test hoặc dùng một supported access path khác. Enforcement và limitations có thể khác nhau giữa Spark, SQL endpoint, và shortcut path; luôn kiểm tra theo từng path. Tham khảo: [Workspace roles](https://learn.microsoft.com/en-us/fabric/fundamentals/roles-workspaces) và [OneLake security per engine](https://learn.microsoft.com/en-us/fabric/onelake/security/onelake-security-overview).
