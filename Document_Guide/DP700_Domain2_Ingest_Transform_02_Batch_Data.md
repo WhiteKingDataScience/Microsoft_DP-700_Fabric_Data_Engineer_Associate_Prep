@@ -1,0 +1,1094 @@
+# DP-700: Ingest and Transform Batch Data
+## Ingest and Transform Data (30–35%) — Phần 2/3
+
+
+> [!IMPORTANT]
+> **Bản hiệu chỉnh ngày 04/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+
+> **Skills measured as of July 21, 2026**  
+> Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
+> Tham chiếu: [Microsoft Learn — Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+
+---
+
+## MỤC LỤC
+
+1. [Choose an Appropriate Data Store](#1-choose-an-appropriate-data-store)
+2. [Choose Between Dataflows Gen2, Notebooks, KQL, and T-SQL](#2-choose-between-dataflows-gen2-notebooks-kql-and-t-sql)
+3. [Create and Manage OneLake Shortcuts](#3-create-and-manage-onelake-shortcuts)
+4. [Implement Mirroring](#4-implement-mirroring)
+5. [Ingest Data by Using Pipelines](#5-ingest-data-by-using-pipelines)
+6. [Transform Data by Using PySpark, SQL, and KQL](#6-transform-data-by-using-pyspark-sql-and-kql)
+7. [Denormalize Data](#7-denormalize-data)
+8. [Group and Aggregate Data](#8-group-and-aggregate-data)
+9. [Handle Duplicate, Missing, and Late-Arriving Data](#9-handle-duplicate-missing-and-late-arriving-data)
+10. [Câu hỏi mô phỏng bài thi (Practice Questions)](#10-câu-hỏi-mô-phỏng-bài-thi-practice-questions)
+
+---
+
+## 1. Choose an Appropriate Data Store
+
+### 1.1. Bảng so sánh các Data Store trong Fabric
+
+| Tiêu chí | **Lakehouse** | **Warehouse** | **Eventhouse** | **SQL Database** |
+|----------|:-------------|:-------------|:--------------|:----------------|
+| **Ngôn ngữ chính** | Spark (PySpark/Scala) + SQL | T-SQL | KQL | T-SQL |
+| **Kiểu dữ liệu** | Structured, semi-structured, unstructured | Structured (relational) | Time-series, logs, telemetry | Structured (transactional) |
+| **Định dạng lưu trữ** | Delta Lake (Parquet) | Delta Lake | Column store (Kusto) | SQL Database format |
+| **Latency** | Phút (batch/micro-batch) | Phút (batch) | Giây (real-time) | Giây (transactional) |
+| **Concurrency** | Trung bình | Cao | Cao | Cao |
+| **Use Case chính** | Data Engineering, ML, Data Lake | Enterprise BI, Star Schema, Reporting | IoT, Streaming, Log Analytics | OLTP + Analytics hybrid |
+| **Medallion Architecture** | ✅ Lý tưởng | ⚠️ Có thể nhưng không lý tưởng | ❌ Không phù hợp | ❌ Không phù hợp |
+| **Direct Lake (Power BI)** | ✅ Hỗ trợ | ✅ Hỗ trợ | ❌ Không trực tiếp | ❌ Không trực tiếp |
+
+### 1.2. Quy tắc chọn Data Store (Decision Framework)
+
+```
+Bạn cần xử lý loại dữ liệu nào?
+│
+├── Streaming / Real-time (< 1 giây latency)?
+│   └── ✅ EVENTHOUSE (KQL Database)
+│
+├── Transactional (CRUD operations)?
+│   └── ✅ SQL DATABASE
+│
+├── Structured data cho BI/Reporting, đội ngũ biết SQL?
+│   └── ✅ WAREHOUSE
+│
+├── Multi-format data (CSV, JSON, Parquet), Data Engineering, ML?
+│   └── ✅ LAKEHOUSE
+│
+└── Kết hợp nhiều use case?
+    └── ✅ Dùng LAKEHOUSE cho ingestion + WAREHOUSE cho serving
+```
+
+### 1.3. Khi nào dùng Lakehouse vs Warehouse?
+
+| Câu hỏi | Lakehouse | Warehouse |
+|----------|-----------|-----------|
+| Đội ngũ dùng PySpark/Python? | ✅ | ❌ |
+| Đội ngũ dùng T-SQL thuần? | ⚠️ (SQL endpoint có giới hạn) | ✅ |
+| Cần xử lý JSON, semi-structured? | ✅ | ❌ |
+| Cần multi-table transactions? | ❌ | ✅ |
+| Cần stored procedures? | ❌ | ✅ |
+| Cần Machine Learning? | ✅ | ❌ |
+| Cần Medallion Architecture? | ✅ | ⚠️ |
+
+> 📌 **Điểm thi**: Kiến trúc phổ biến nhất là **Lakehouse cho ingestion/transformation** (Bronze → Silver) và **Warehouse hoặc Lakehouse Gold layer cho serving** (BI/Reporting).
+
+---
+
+## 2. Choose Between Dataflows Gen2, Notebooks, KQL, and T-SQL
+
+### 2.1. Ma trận quyết định
+
+| Tiêu chí | **Dataflows Gen2** | **Notebooks (Spark)** | **T-SQL** | **KQL** |
+|----------|:-------------------|:---------------------|:----------|:--------|
+| **Phong cách** | Low-code (Power Query) | Pro-code (Python/Scala) | SQL thuần | Kusto Query |
+| **Người dùng** | Citizen Developer, Analyst | Data Engineer, Data Scientist | DBA, SQL Developer | Analytics Engineer |
+| **Quy mô dữ liệu** | Nhỏ → Trung bình | Trung bình → Rất lớn | Trung bình → Lớn | Lớn (time-series) |
+| **Data connectors** | Nhiều connector qua Power Query | JDBC/files/APIs và OneLake | Relational sources | Eventhouse/external tables/streaming sources |
+| **Cost efficiency** | Trung bình | Cao (1 session xử lý nhiều) | Cao | Cao |
+| **Real-time** | ❌ | ⚠️ (Structured Streaming) | ❌ | ✅ |
+| **Destination** | Lakehouse, Warehouse | Lakehouse | Warehouse | Eventhouse |
+
+### 2.2. Khi nào chọn Dataflows Gen2?
+
+✅ **Chọn Dataflows Gen2 khi**:
+- Logic transformation đơn giản (filter, rename, merge columns)
+- Kết nối tới nguồn dữ liệu external (SharePoint, Excel, Web API)
+- Người dùng không biết code (citizen developer)
+- Transformation phù hợp với Power Query, query folding và capacity/SLA; không quyết định chỉ bằng số row
+- Cần giao diện visual drag-and-drop
+
+❌ **KHÔNG chọn Dataflows Gen2 khi**:
+- Data lớn (hàng trăm triệu rows) → chọn Notebook
+- Logic phức tạp (window functions, ML) → chọn Notebook
+- Real-time processing → chọn KQL hoặc Spark Streaming
+
+### 2.3. Khi nào chọn Notebook (Spark)?
+
+✅ **Chọn Notebook khi**:
+- Data lớn, cần distributed processing
+- Logic transformation phức tạp (custom functions, ML)
+- Xây dựng Medallion Architecture (Bronze → Silver → Gold)
+- Cần `MERGE INTO` cho incremental loads
+- Streaming data (Spark Structured Streaming)
+- Cần tái sử dụng code, version control
+
+### 2.4. Khi nào chọn T-SQL?
+
+✅ **Chọn T-SQL khi**:
+- Làm việc trong Fabric Warehouse
+- Đội ngũ có expertise SQL
+- Cần stored procedures, views, functions
+- Multi-table transactions
+- Transformation trên dữ liệu đã structured sẵn
+
+### 2.5. Khi nào chọn KQL?
+
+✅ **Chọn KQL khi**:
+- Dữ liệu streaming real-time (IoT, logs, telemetry)
+- Làm việc trong Eventhouse / KQL Database
+- Cần time-series analytics
+- Query trên semi-structured data (JSON) nhanh
+
+> 📌 **Tip thi**: Câu hỏi thường cho scenario → bạn phải chọn công cụ phù hợp. Nhớ: **Dataflows Gen2 = low-code, nhỏ** | **Notebook = pro-code, lớn** | **T-SQL = Warehouse** | **KQL = Eventhouse/real-time**
+
+---
+
+## 3. Create and Manage OneLake Shortcuts
+
+### 3.1. OneLake Shortcuts là gì?
+
+OneLake Shortcuts là **symbolic links (liên kết ảo)** cho phép truy cập dữ liệu ở vị trí khác **mà không cần di chuyển hoặc sao chép dữ liệu**. Shortcuts xuất hiện như một thư mục/bảng bình thường trong Lakehouse hoặc KQL Database.
+
+### 3.2. Các loại Shortcut được hỗ trợ
+
+| Nguồn | Loại | Mô tả |
+|-------|------|--------|
+| **OneLake Internal** | Internal | Trỏ tới Lakehouse/Warehouse/KQL DB khác trong Fabric |
+| **Azure Data Lake Storage Gen2** | External | Trỏ tới ADLS Gen2 container/folder |
+| **Amazon S3** | External | Trỏ tới S3 bucket (và S3-compatible) |
+| **Google Cloud Storage** | External | Trỏ tới GCS bucket |
+| **Dataverse** | External | Trỏ tới bảng Dataverse (qua Fabric Link) |
+| **SharePoint/OneDrive** | External | Trỏ tới thư mục SharePoint/OneDrive |
+| **Azure Blob Storage** | External | Trỏ tới Azure Blob container |
+
+### 3.3. Cách tạo Shortcut
+
+**Qua giao diện UI**:
+1. Mở **Lakehouse** hoặc **KQL Database**
+2. Chuột phải lên **Tables** hoặc **Files** → **New Shortcut**
+3. Chọn nguồn (OneLake, ADLS Gen2, S3, GCS, Dataverse...)
+4. Cấu hình connection (URL, authentication)
+5. Chọn thư mục/bảng cần shortcut
+6. Đặt tên → Create
+
+**Qua REST API (programmatic)**:
+```json
+// POST https://api.fabric.microsoft.com/v1/workspaces/{workspaceId}/items/{lakehouseId}/shortcuts
+
+{
+    "path": "Tables/sales_data",
+    "target": {
+        "adlsGen2": {
+            "location": "https://mystorage.dfs.core.windows.net",
+            "subpath": "/container/sales/"
+        }
+    }
+}
+```
+
+### 3.4. Authentication cho Shortcuts
+
+| Phương pháp | Mô tả | Khi nào dùng |
+|-------------|--------|-------------|
+| **Pass-through** | Dùng identity của user đang truy cập | Interactive scenarios |
+| **Delegated Identity** | Dùng Service Principal/Connection | Automated pipelines |
+| **Trusted Workspace Access** | Dùng Workspace Identity | ADLS Gen2 có firewall |
+
+### 3.5. Quản lý và Governance
+
+- **Caching**: OneLake hỗ trợ cache shortcut data (1–28 ngày) → giảm egress cost
+- **Billing**: Chi phí compute tính trên **destination capacity** (nơi shortcut nằm), KHÔNG phải source
+- **Security**: Shortcuts kế thừa security controls của OneLake (sensitivity labels)
+- **Catalog**: Shortcuts xuất hiện trong OneLake Catalog
+
+### 3.6. Shortcut trong Tables vs Files
+
+| Vị trí | Hành vi |
+|--------|---------|
+| **Tables/** | Dữ liệu được coi là Delta table, query được bằng SQL endpoint |
+| **Files/** | Dữ liệu là unmanaged files, cần đọc bằng Spark/custom code |
+
+> 📌 **Điểm thi quan trọng**: Shortcuts **KHÔNG** hỗ trợ kết nối trực tiếp tới Azure SQL Database, Cosmos DB, hay bất kỳ database nào. Chúng chỉ hỗ trợ **storage-level** connections (ADLS, S3, GCS) và **OneLake internal** items.
+
+---
+
+## 4. Implement Mirroring
+
+### 4.1. Mirroring là gì?
+
+Mirroring trong Fabric là tính năng **zero-ETL** tự động replicate dữ liệu từ operational database vào OneLake. Dữ liệu được chuyển đổi thành **Delta Lake format** và có sẵn SQL analytics endpoint.
+
+### 4.2. Nguồn dữ liệu hỗ trợ Mirroring
+
+| Nguồn | Trạng thái (2026) | Ghi chú |
+|-------|-------------------|---------|
+| **Azure SQL Database** | ✅ GA | Không hỗ trợ nếu đã bật CDC hoặc Synapse Link |
+| **Azure SQL Managed Instance** | ✅ GA | Hỗ trợ nguồn sau firewall |
+| **Azure Cosmos DB** | ✅ GA | NoSQL → Delta Lake, hỗ trợ private network |
+| **Snowflake** | ✅ GA | Managed tables + Apache Iceberg tables |
+| **SQL Server 2016–2025** | ✅ GA | On-premises, Azure VM, non-Azure cloud |
+| **Open Mirroring** | ✅ GA | 150+ nguồn qua third-party (SAP, Salesforce...) |
+
+### 4.3. Kiến trúc Mirroring
+
+```
+┌──────────────────┐         ┌──────────────────────────────┐
+│ Source Database   │         │      Microsoft Fabric        │
+│ (Azure SQL, etc) │         │                              │
+│                  │  auto   │  ┌────────────────────────┐  │
+│  ┌─────────┐    │ replicate│  │   Mirrored Database    │  │
+│  │ Table A  │────┼─────────┼─►│  ┌──────────────────┐ │  │
+│  │ Table B  │    │         │  │  │ Delta Tables     │ │  │
+│  │ Table C  │    │  CDC    │  │  │ (Auto-converted) │ │  │
+│  └─────────┘    │ changes │  │  └──────────────────┘ │  │
+│                  │─────────┼─►│  ┌──────────────────┐ │  │
+│                  │         │  │  │ SQL Analytics    │ │  │
+│                  │         │  │  │ Endpoint         │ │  │
+└──────────────────┘         │  │  └──────────────────┘ │  │
+                             │  └────────────────────────┘  │
+                             │           │                  │
+                             │     ┌─────▼─────┐           │
+                             │     │ Power BI   │           │
+                             │     │(Direct Lake)│          │
+                             │     └───────────┘           │
+                             └──────────────────────────────┘
+```
+
+### 4.4. Mirroring vs Shortcuts vs Pipelines
+
+| Tiêu chí | **Mirroring** | **Shortcuts** | **Pipelines** |
+|----------|:-------------|:-------------|:-------------|
+| **Data Movement** | Copy (auto-replicate) | No copy (virtual) | Copy (manual) |
+| **Freshness** | Near real-time | Real-time (đọc nguồn) | Batch (schedule) |
+| **Complexity** | Thấp (zero-ETL) | Thấp | Trung bình → Cao |
+| **Source types** | Databases only | Storage only | Cả hai |
+| **Transformation** | Không (raw replicate) | Không | Có (trong pipeline) |
+| **Maintenance** | Tự động | Tối thiểu | Thủ công |
+
+### 4.5. Extended Capabilities (2026)
+
+Từ 2026, Mirroring hỗ trợ **Extended Capabilities** (tính năng bổ sung, có thêm chi phí):
+- **Change Data Feed (CDF)**: Truy cập lịch sử thay đổi của bảng mirrored
+- **Views**: Replicate views từ nguồn (không chỉ tables)
+- Yêu cầu cấu hình riêng và có chi phí bổ sung
+
+> 📌 **Điểm thi**: Mirroring **KHÔNG hỗ trợ** Azure SQL Database đã bật CDC trước đó. Nếu nguồn đã bật CDC → dùng Copy Job CDC mode thay thế.
+
+---
+
+## 5. Ingest Data by Using Pipelines
+
+### 5.1. Kiến trúc Pipeline trong Fabric Data Factory
+
+```
+Pipeline
+├── Copy Activity          → Di chuyển data từ A → B
+├── Dataflow Activity      → Gọi Dataflow Gen2
+├── Notebook Activity      → Chạy Spark Notebook
+├── Stored Procedure       → Chạy stored proc trong Warehouse
+├── Script Activity        → Chạy SQL script
+├── ForEach Loop           → Lặp qua danh sách items
+├── If Condition           → Logic rẽ nhánh
+├── Lookup Activity        → Truy vấn data để dùng trong pipeline
+├── Set Variable           → Gán biến
+├── Web Activity           → Gọi REST API
+└── Get Metadata           → Lấy thông tin file/folder
+```
+
+### 5.2. Copy Activity — Trọng tâm
+
+**Copy Activity** là activity phổ biến nhất, dùng để di chuyển dữ liệu từ nguồn tới đích.
+
+**Các chế độ ghi (Write Mode)**:
+
+| Mode | Mô tả | Use Case |
+|------|--------|----------|
+| **Append** | Thêm data mới vào bảng hiện có | Incremental load |
+| **Overwrite** | Ghi đè toàn bộ bảng | Full load |
+| **Merge** | Upsert (INSERT + UPDATE) | CDC, SCD Type 1 |
+| **Delete + Insert** | Xóa data khớp rồi insert | Partition-level reload |
+
+### 5.3. Copy Job (2026)
+
+**Copy Job** là phiên bản tiến hóa của Copy Activity, hỗ trợ:
+- **CDC natively** cho Azure SQL, SQL Server, Snowflake
+- **Watermark-based incremental** tự động
+- **SCD Type 2** no-code
+- **Merge mode** tự động
+
+### 5.4. Pipeline Parameters và Dynamic Expressions
+
+```json
+// Pipeline Parameter
+{
+    "TableName": { "type": "String", "defaultValue": "customers" },
+    "LoadDate": { "type": "String", "defaultValue": "" }
+}
+
+// Dynamic Expression trong Copy Activity Source Query
+@concat('SELECT * FROM ', pipeline().parameters.TableName, 
+        ' WHERE ModifiedDate > ''', pipeline().parameters.LoadDate, '''')
+```
+
+### 5.5. ForEach Pattern — Load nhiều bảng
+
+```
+Pipeline:
+├── Lookup Activity: 
+│     Query: SELECT TableName, WatermarkColumn FROM control.tables WHERE IsActive = 1
+│
+└── ForEach Activity (items: @activity('Lookup').output.value)
+    └── Copy Activity (inside ForEach):
+          Source: @item().TableName
+          Destination: Lakehouse bronze.@{item().TableName}
+```
+
+---
+
+## 6. Transform Data by Using PySpark, SQL, and KQL
+
+### 6.1. PySpark Transformations
+
+#### Các phép biến đổi phổ biến
+
+```python
+from pyspark.sql.functions import *
+
+# === FILTER ===
+df_filtered = df.filter(col("Status") == "Active")
+
+# === SELECT & RENAME ===
+df_selected = df.select(
+    col("CustomerID"),
+    col("customer_name").alias("CustomerName"),
+    upper(col("city")).alias("City")
+)
+
+# === JOIN ===
+df_joined = orders.join(customers, "CustomerID", "left")
+
+# === WINDOW FUNCTION ===
+from pyspark.sql.window import Window
+
+window_spec = Window.partitionBy("CustomerID").orderBy(desc("OrderDate"))
+df_ranked = df.withColumn("RowNum", row_number().over(window_spec))
+df_latest = df_ranked.filter(col("RowNum") == 1)
+
+# === GROUP BY & AGGREGATE ===
+df_agg = df.groupBy("ProductCategory") \
+    .agg(
+        sum("Revenue").alias("TotalRevenue"),
+        count("OrderID").alias("OrderCount"),
+        avg("UnitPrice").alias("AvgPrice")
+    )
+
+# === TYPE CASTING ===
+df_cast = df.withColumn("Amount", col("Amount").cast("decimal(18,2)")) \
+            .withColumn("OrderDate", to_date(col("OrderDate"), "yyyy-MM-dd"))
+
+# === HANDLE NULLS ===
+df_clean = df.fillna({"City": "Unknown", "Revenue": 0}) \
+             .dropna(subset=["CustomerID"])
+
+# === ADD COLUMNS ===
+df_enriched = df.withColumn("Year", year(col("OrderDate"))) \
+               .withColumn("IsHighValue", when(col("Revenue") > 1000, True).otherwise(False))
+```
+
+### 6.2. SQL Transformations (T-SQL trong Warehouse)
+
+```sql
+-- === CREATE VIEW cho transformation ===
+CREATE VIEW silver.v_orders_cleaned AS
+SELECT 
+    OrderID,
+    CustomerID,
+    CAST(OrderDate AS DATE) AS OrderDate,
+    ISNULL(Quantity, 0) AS Quantity,
+    ISNULL(UnitPrice, 0) AS UnitPrice,
+    Quantity * UnitPrice AS TotalAmount,
+    YEAR(OrderDate) AS OrderYear,
+    MONTH(OrderDate) AS OrderMonth
+FROM bronze.orders
+WHERE OrderID IS NOT NULL;
+
+-- === CTAS (CREATE TABLE AS SELECT) ===
+CREATE TABLE silver.orders_cleaned AS
+SELECT 
+    OrderID,
+    CustomerID,
+    CAST(OrderDate AS DATE) AS OrderDate,
+    COALESCE(Quantity, 0) AS Quantity,
+    COALESCE(UnitPrice, 0.00) AS UnitPrice
+FROM bronze.orders
+WHERE Status <> 'Cancelled';
+
+-- === WINDOW FUNCTION trong T-SQL ===
+SELECT 
+    CustomerID,
+    OrderDate,
+    Revenue,
+    ROW_NUMBER() OVER (PARTITION BY CustomerID ORDER BY OrderDate DESC) AS RowNum,
+    SUM(Revenue) OVER (PARTITION BY CustomerID) AS CustomerTotalRevenue,
+    LAG(Revenue) OVER (PARTITION BY CustomerID ORDER BY OrderDate) AS PreviousRevenue
+FROM silver.orders;
+```
+
+### 6.3. KQL Transformations (Eventhouse)
+
+```kql
+// === FILTER & PROJECT ===
+SensorData
+| where EventTime > ago(1h)
+| where Temperature > 30
+| project DeviceId, Temperature, Humidity, EventTime
+
+// === AGGREGATE ===
+SensorData
+| summarize 
+    AvgTemp = avg(Temperature),
+    MaxTemp = max(Temperature),
+    EventCount = count()
+    by DeviceId, bin(EventTime, 5m)
+
+// === JOIN ===
+SensorData
+| join kind=inner (DeviceMetadata) on DeviceId
+| project DeviceId, DeviceName, Location, Temperature
+
+// === PARSE JSON ===
+RawEvents
+| extend parsed = parse_json(Body)
+| project 
+    DeviceId = tostring(parsed.deviceId),
+    Temperature = todouble(parsed.temperature),
+    EventTime = todatetime(parsed.timestamp)
+
+// === TIME SERIES ===
+SensorData
+| make-series AvgTemp = avg(Temperature) on EventTime from ago(24h) to now() step 1h by DeviceId
+| render timechart
+```
+
+---
+
+## 7. Denormalize Data
+
+### 7.1. Tại sao Denormalize?
+
+Trong bối cảnh Fabric, denormalization thường xảy ra ở tầng **Silver → Gold**:
+
+| Tầng | State | Mô tả |
+|------|-------|--------|
+| Bronze | Raw | Giữ nguyên cấu trúc nguồn |
+| Silver | Normalized | Cleaned, validated, vẫn normalized |
+| **Gold** | **Denormalized** | **Flatten, star schema, sẵn sàng cho BI** |
+
+### 7.2. Kỹ thuật Denormalization
+
+#### A. Flatten Hierarchy (JOIN nhiều bảng)
+```python
+# Normalized: 3 bảng riêng
+# employees -> departments -> locations
+
+dim_employee = spark.table("silver.employees") \
+    .join(spark.table("silver.departments"), "DeptID") \
+    .join(spark.table("silver.locations"), "LocationID") \
+    .select(
+        "EmployeeID", "EmployeeName", "Title",
+        "DepartmentName",                    # Từ bảng departments
+        "City", "Country"                    # Từ bảng locations
+    )
+```
+
+#### B. Pre-aggregate (Tính toán trước)
+```python
+# Thay vì query: SUM(Revenue) GROUP BY Product mỗi lần
+# → Tạo bảng denormalized sẵn
+
+product_summary = spark.table("silver.sales") \
+    .groupBy("ProductID", "ProductName", "Category") \
+    .agg(
+        sum("Revenue").alias("TotalRevenue"),
+        count("OrderID").alias("TotalOrders"),
+        avg("Quantity").alias("AvgQuantity")
+    )
+
+product_summary.write.format("delta") \
+    .mode("overwrite") \
+    .saveAsTable("gold.product_summary")
+```
+
+#### C. Embed Related Data (Nhúng dữ liệu liên quan)
+```sql
+-- Thay vì JOIN mỗi khi query
+-- → Thêm trực tiếp cột từ bảng liên quan vào fact table
+
+CREATE TABLE gold.fact_sales_enriched AS
+SELECT 
+    s.OrderID,
+    s.OrderDate,
+    s.Quantity,
+    s.Revenue,
+    c.CustomerName,    -- Nhúng từ DimCustomer
+    c.City,
+    p.ProductName,     -- Nhúng từ DimProduct
+    p.Category,
+    d.Year,            -- Nhúng từ DimDate
+    d.Quarter
+FROM silver.sales s
+JOIN gold.dim_customer c ON s.CustomerID = c.CustomerID
+JOIN gold.dim_product p ON s.ProductID = p.ProductID
+JOIN gold.dim_date d ON s.OrderDate = d.FullDate;
+```
+
+---
+
+## 8. Group and Aggregate Data
+
+### 8.1. PySpark Aggregations
+
+```python
+from pyspark.sql.functions import *
+
+# === Basic Aggregation ===
+df.groupBy("Region", "ProductCategory") \
+    .agg(
+        sum("Revenue").alias("TotalRevenue"),
+        count("OrderID").alias("OrderCount"),
+        avg("UnitPrice").alias("AvgUnitPrice"),
+        min("OrderDate").alias("FirstOrder"),
+        max("OrderDate").alias("LastOrder"),
+        countDistinct("CustomerID").alias("UniqueCustomers")
+    )
+
+# === Rollup (Subtotals) ===
+df.rollup("Region", "City") \
+    .agg(sum("Revenue").alias("TotalRevenue")) \
+    .orderBy("Region", "City")
+# Kết quả: chi tiết theo City, subtotal theo Region, grand total
+
+# === Cube (All Combinations) ===
+df.cube("Region", "ProductCategory") \
+    .agg(sum("Revenue").alias("TotalRevenue"))
+# Kết quả: mọi tổ hợp subtotals
+
+# === Pivot ===
+df.groupBy("Region") \
+    .pivot("ProductCategory", ["Electronics", "Clothing", "Food"]) \
+    .agg(sum("Revenue"))
+```
+
+### 8.2. SQL Aggregations (Warehouse)
+
+```sql
+-- === GROUP BY with HAVING ===
+SELECT 
+    ProductCategory,
+    COUNT(*) AS OrderCount,
+    SUM(Revenue) AS TotalRevenue,
+    AVG(Revenue) AS AvgRevenue
+FROM silver.orders
+GROUP BY ProductCategory
+HAVING SUM(Revenue) > 100000;
+
+-- === GROUPING SETS ===
+SELECT 
+    Region, 
+    ProductCategory,
+    SUM(Revenue) AS TotalRevenue
+FROM silver.orders
+GROUP BY GROUPING SETS (
+    (Region, ProductCategory),  -- Detail
+    (Region),                    -- Subtotal by Region
+    ()                           -- Grand Total
+);
+
+-- === Window Aggregation (Running Total) ===
+SELECT 
+    OrderDate,
+    Revenue,
+    SUM(Revenue) OVER (ORDER BY OrderDate ROWS UNBOUNDED PRECEDING) AS RunningTotal,
+    AVG(Revenue) OVER (ORDER BY OrderDate ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS MovingAvg7Day
+FROM silver.orders;
+```
+
+### 8.3. KQL Aggregations (Eventhouse)
+
+```kql
+// === Basic Summarize ===
+SensorData
+| summarize 
+    AvgTemp = avg(Temperature),
+    MaxTemp = max(Temperature),
+    MinTemp = min(Temperature),
+    ReadingCount = count()
+    by DeviceId
+
+// === Time-binned Aggregation ===
+SensorData
+| summarize AvgTemp = avg(Temperature) by bin(EventTime, 1h), DeviceId
+| order by EventTime desc
+
+// === Percentiles ===
+ResponseTimes
+| summarize 
+    P50 = percentile(Duration, 50),
+    P90 = percentile(Duration, 90),
+    P99 = percentile(Duration, 99)
+    by ServiceName
+
+// === Dynamic Aggregation (Array/Set) ===
+Orders
+| summarize 
+    OrderList = make_list(OrderID),
+    UniqueProducts = make_set(ProductID)
+    by CustomerID
+```
+
+---
+
+## 9. Handle Duplicate, Missing, and Late-Arriving Data
+
+### 9.1. Xử lý Duplicate Data (Dữ liệu trùng lặp)
+
+#### Phát hiện và loại bỏ duplicates bằng PySpark
+
+```python
+from pyspark.sql.functions import row_number, col
+from pyspark.sql.window import Window
+
+# Phương pháp 1: dropDuplicates (đơn giản)
+df_dedup = df.dropDuplicates(["OrderID"])
+
+# Phương pháp 2: Window function (giữ bản ghi mới nhất)
+window_spec = Window.partitionBy("OrderID").orderBy(col("ModifiedDate").desc())
+
+df_dedup = df.withColumn("rn", row_number().over(window_spec)) \
+             .filter(col("rn") == 1) \
+             .drop("rn")
+
+# Phương pháp 3: Dùng MERGE INTO để tránh insert duplicate
+from delta.tables import DeltaTable
+
+target = DeltaTable.forName(spark, "silver.orders")
+target.alias("t").merge(
+    source_df.alias("s"),
+    "t.OrderID = s.OrderID"
+).whenNotMatchedInsertAll().execute()
+```
+
+#### Phát hiện duplicates bằng SQL
+```sql
+-- Tìm duplicates
+SELECT OrderID, COUNT(*) as cnt
+FROM bronze.orders
+GROUP BY OrderID
+HAVING COUNT(*) > 1;
+
+-- Loại bỏ duplicates (giữ mới nhất)
+WITH ranked AS (
+    SELECT *,
+        ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY ModifiedDate DESC) AS rn
+    FROM bronze.orders
+)
+SELECT * FROM ranked WHERE rn = 1;
+```
+
+### 9.2. Xử lý Missing Data (Dữ liệu thiếu)
+
+```python
+from pyspark.sql.functions import col, when, coalesce, lit, avg
+
+# === Phương pháp 1: Thay thế bằng giá trị mặc định ===
+df_filled = df.fillna({
+    "City": "Unknown",
+    "Revenue": 0,
+    "Category": "Uncategorized"
+})
+
+# === Phương pháp 2: Thay thế NULL bằng giá trị trung bình ===
+avg_price = df.agg(avg("UnitPrice")).collect()[0][0]
+df_filled = df.fillna({"UnitPrice": avg_price})
+
+# === Phương pháp 3: COALESCE — lấy giá trị NOT NULL đầu tiên ===
+df_clean = df.withColumn(
+    "Address", 
+    coalesce(col("ShippingAddress"), col("BillingAddress"), lit("No Address"))
+)
+
+# === Phương pháp 4: Loại bỏ rows có NULL trong cột quan trọng ===
+df_clean = df.dropna(subset=["CustomerID", "OrderDate"])
+
+# === Phương pháp 5: Flag missing data ===
+df_flagged = df.withColumn(
+    "IsMissingRevenue", 
+    when(col("Revenue").isNull(), True).otherwise(False)
+)
+```
+
+**SQL xử lý Missing Data**:
+```sql
+-- ISNULL / COALESCE
+SELECT 
+    OrderID,
+    ISNULL(Quantity, 0) AS Quantity,
+    COALESCE(ShippingAddress, BillingAddress, 'No Address') AS Address,
+    CASE WHEN Revenue IS NULL THEN 'Missing' ELSE 'Present' END AS RevenueStatus
+FROM bronze.orders;
+```
+
+### 9.3. Xử lý Late-Arriving Data (Dữ liệu đến muộn)
+
+#### Vấn đề
+Late-arriving data xảy ra khi:
+- Fact record đến trước dimension record tương ứng
+- Event đến muộn so với processing window
+- System delay gây ra data out-of-order
+
+#### Chiến lược xử lý
+
+**Strategy 1: Early-Arriving Fact Pattern**
+```python
+# Khi fact đến trước dimension → dùng "Unknown" surrogate key
+fact_with_lookup = fact_df.join(
+    dim_customer,
+    "CustomerID",
+    "left"  # LEFT JOIN để giữ fact row dù dimension chưa có
+).withColumn(
+    "CustomerSK",
+    coalesce(col("CustomerSK"), lit(-1))  # -1 = Unknown member
+)
+```
+
+**Strategy 2: Reprocessing (Xử lý lại)**
+```python
+# Khi dimension đến muộn → UPDATE fact table
+# Bước 1: Load dimension mới
+# Bước 2: Update fact records có SK = -1
+
+spark.sql("""
+    MERGE INTO gold.fact_sales AS f
+    USING gold.dim_customer AS d
+        ON f.CustomerID = d.CustomerID AND f.CustomerSK = -1
+    WHEN MATCHED THEN
+        UPDATE SET f.CustomerSK = d.CustomerSK
+""")
+```
+
+**Strategy 3: Late-Arriving Dimension Members**
+```sql
+-- Tạo "placeholder" dimension record khi fact đến trước
+INSERT INTO gold.dim_customer (CustomerSK, CustomerID, CustomerName, IsCurrent)
+VALUES (-1, NULL, 'Unknown', 1);
+
+-- Sau khi dimension data đến → UPDATE placeholder
+MERGE INTO gold.dim_customer AS target
+USING source_customers AS source
+    ON target.CustomerID = source.CustomerID
+WHEN MATCHED AND target.CustomerName = 'Unknown' THEN
+    UPDATE SET 
+        target.CustomerName = source.CustomerName,
+        target.City = source.City;
+```
+
+**Strategy 4: Event-time Windowing (cho Streaming)**
+```python
+from pyspark.sql.functions import avg, window
+
+# Watermark giới hạn state và chính sách late data cho stateful aggregation
+aggregated = (
+    streaming_df
+    .withWatermark("EventTime", "10 minutes")
+    .groupBy(window("EventTime", "5 minutes"), "DeviceId")
+    .agg(avg("Temperature").alias("AvgTemp"))
+)
+```
+
+> 📌 **Điểm thi quan trọng về Late-Arriving Data**:
+> - Luôn tạo **"Unknown" dimension member** (SK = -1) để handle early-arriving facts
+> - Trong streaming, dùng **watermark** để xác định deadline cho late data
+> - Dữ liệu đến sau watermark sẽ bị **DROP** (loại bỏ)
+
+---
+
+## 10. Câu hỏi mô phỏng bài thi (Practice Questions)
+
+### Question 1
+
+**You are designing a data platform in Microsoft Fabric. The requirements are:**
+- **Data Engineering team** uses PySpark and Python for complex transformations
+- **Data Analysts** need to query the final data using T-SQL
+- **Raw data** includes JSON files, CSVs, and Parquet files from multiple sources
+- **Final output** must support Power BI Direct Lake mode
+
+**Which combination of data stores should you use?**
+
+A. Eventhouse for ingestion, Warehouse for serving  
+B. Lakehouse for ingestion and transformation, Warehouse for serving  
+C. Lakehouse for everything  
+D. Warehouse for everything
+
+**✅ Correct Answer: B**
+
+> **Giải thích**:
+> - **(B) Đúng** — Lakehouse là lý tưởng cho Data Engineering team (PySpark, multi-format data). Warehouse tối ưu cho T-SQL queries từ Data Analysts. Cả hai đều hỗ trợ Direct Lake cho Power BI. Đây là kiến trúc phổ biến nhất.
+> - **(A) Sai** — Eventhouse dành cho streaming/real-time, không phải batch ETL.
+> - **(C) Sai** — Lakehouse SQL endpoint có giới hạn so với Warehouse cho T-SQL phức tạp (stored procedures, multi-table transactions).
+> - **(D) Sai** — Warehouse không hỗ trợ PySpark và không lý tưởng cho xử lý JSON/semi-structured data.
+
+---
+
+### Question 2
+
+**You need to provide analysts access to data stored in Azure Data Lake Storage Gen2 from a Fabric Lakehouse WITHOUT copying the data.**
+
+**What should you use?**
+
+A. Database mirroring  
+B. Data pipeline with Copy Activity  
+C. OneLake shortcut  
+D. Dataflow Gen2
+
+**✅ Correct Answer: C**
+
+> **Giải thích**:
+> - **(C) Đúng** — OneLake shortcuts tạo liên kết ảo tới ADLS Gen2, cho phép truy cập dữ liệu mà KHÔNG sao chép. Data xuất hiện như thư mục/bảng bình thường trong Lakehouse.
+> - **(A) Sai** — Mirroring chỉ hỗ trợ databases (Azure SQL, Cosmos DB, etc.), KHÔNG hỗ trợ ADLS Gen2.
+> - **(B) Sai** — Copy Activity sẽ sao chép dữ liệu, vi phạm yêu cầu "without copying".
+> - **(D) Sai** — Dataflow Gen2 cũng di chuyển/transform dữ liệu.
+
+---
+
+### Question 3
+
+**You are ingesting data from an operational Azure SQL Database with 100 tables into Microsoft Fabric. You need near real-time data freshness with minimal maintenance.**
+
+**The Azure SQL Database does NOT have Change Data Capture (CDC) currently enabled.**
+
+**Which approach should you use?**
+
+A. Create a pipeline with 100 Copy Activities  
+B. Enable CDC on Azure SQL and use Copy Job CDC mode  
+C. Configure database mirroring  
+D. Create OneLake shortcuts to the database
+
+**✅ Correct Answer: C**
+
+> **Giải thích**:
+> - **(C) Đúng** — Mirroring là giải pháp zero-ETL tốt nhất cho scenario này. Nó tự động replicate toàn bộ tables, near real-time, không cần enable CDC trên nguồn, và không cần maintain pipeline. Mirroring tự xử lý change detection internally.
+> - **(A) Sai** — 100 Copy Activities rất phức tạp để build và maintain.
+> - **(B) Sai** — Đề bài nói CDC chưa được enable, và việc enable CDC có thể impact performance production database.
+> - **(D) Sai** — OneLake shortcuts KHÔNG hỗ trợ kết nối trực tiếp tới Azure SQL Database. Shortcuts chỉ hỗ trợ storage (ADLS, S3, GCS).
+
+---
+
+### Question 4
+
+**A citizen developer with no coding experience needs to clean and transform data from a SharePoint list and load it into a Fabric Lakehouse. The data has about 50,000 rows.**
+
+**Which transformation tool should you recommend?**
+
+A. Spark Notebook with PySpark  
+B. Dataflow Gen2  
+C. T-SQL stored procedure in Warehouse  
+D. KQL in Eventhouse
+
+**✅ Correct Answer: B**
+
+> **Giải thích**:
+> - **(B) Đúng** — Dataflow Gen2 có giao diện visual low-code (Power Query), hỗ trợ kết nối SharePoint natively, và phù hợp cho người dùng không biết code với data size nhỏ (50K rows).
+> - **(A) Sai** — Notebook yêu cầu coding skills (PySpark), quá mức cần thiết cho task đơn giản này.
+> - **(C) Sai** — T-SQL không phù hợp cho kết nối SharePoint và yêu cầu SQL knowledge.
+> - **(D) Sai** — KQL dành cho real-time/streaming, không phù hợp cho SharePoint data.
+
+---
+
+### Question 5
+
+**You are processing IoT sensor data in a Fabric Lakehouse using PySpark. Some sensor readings arrive multiple times with the same SensorID and Timestamp due to network retries. You need to keep only the most recent reading for each combination of SensorID and Timestamp.**
+
+**Which PySpark approach should you use?**
+
+A. `df.distinct()`  
+B. `df.dropDuplicates(["SensorID", "Timestamp"])`  
+C. Use a window function with `ROW_NUMBER()` partitioned by SensorID and Timestamp, ordered by ingestion time descending, then filter `rn == 1`  
+D. `df.filter(col("duplicate") == False)`
+
+**✅ Correct Answer: C**
+
+> **Giải thích**:
+> - **(C) Đúng** — Window function với `ROW_NUMBER()` cho phép xác định chính xác row "mới nhất" dựa trên cột ingestion time hoặc arrival time. Đây là pattern chuẩn khi cần chọn 1 row cụ thể từ nhiều duplicates dựa trên tiêu chí ordering.
+> - **(A) Sai** — `distinct()` loại bỏ rows giống hoàn toàn, nhưng duplicate readings có thể khác nhau ở cột khác (ví dụ: _ingestion_timestamp).
+> - **(B) Sai** — `dropDuplicates` giữ row đầu tiên gặp được, KHÔNG đảm bảo giữ row "mới nhất".
+> - **(D) Sai** — Không có cột "duplicate" mặc định trong DataFrame.
+
+---
+
+### Question 6
+
+**You are building a data pipeline where customer orders (fact data) sometimes arrive before the corresponding customer records (dimension data) are available. The customer dimension uses surrogate keys.**
+
+**How should you handle this late-arriving dimension scenario?**
+
+A. Drop the fact records that don't have matching dimension records  
+B. Use an INNER JOIN so only matched records are loaded  
+C. Use a LEFT JOIN and assign a default surrogate key (-1) for unmatched dimension references, then update later when dimension data arrives  
+D. Delay the entire pipeline until all dimension data is confirmed loaded
+
+**✅ Correct Answer: C**
+
+> **Giải thích**:
+> - **(C) Đúng** — Đây là pattern chuẩn "Early-Arriving Fact": sử dụng LEFT JOIN và gán SK = -1 (Unknown member) cho facts chưa có dimension match. Khi dimension data đến muộn, chạy UPDATE để sửa SK từ -1 thành giá trị đúng.
+> - **(A) Sai** — Drop fact records gây mất dữ liệu kinh doanh.
+> - **(B) Sai** — INNER JOIN cũng gây mất fact records không match.
+> - **(D) Sai** — Delay pipeline gây trễ toàn bộ hệ thống, không thực tế.
+
+---
+
+### Question 7
+
+**You have an Azure SQL Database that already has Azure Synapse Link enabled. You want to continuously replicate the database tables into a Fabric Lakehouse.**
+
+**Which approach should you use?**
+
+A. Configure database mirroring  
+B. Use a Copy Job with CDC mode  
+C. Create OneLake shortcuts to the Synapse Link storage  
+D. Use Dataflow Gen2 with incremental refresh
+
+**✅ Correct Answer: B**
+
+> **Giải thích**:
+> - **(B) Đúng** — Copy Job CDC mode là giải pháp phù hợp khi Azure SQL đã có Synapse Link enabled, vì Mirroring KHÔNG hỗ trợ databases đã bật Synapse Link hoặc CDC.
+> - **(A) Sai** — Mirroring **không tương thích** với Azure SQL Database đã bật Synapse Link.
+> - **(C) Sai** — Shortcuts không kết nối trực tiếp tới SQL Database.
+> - **(D) Sai** — Dataflow Gen2 incremental refresh phức tạp hơn và không hiệu quả bằng CDC.
+
+---
+
+### Question 8
+
+**You are transforming data in a Fabric Eventhouse. You need to parse JSON data from raw event logs and extract specific fields.**
+
+**Which query language should you use?**
+
+A. PySpark  
+B. T-SQL  
+C. KQL  
+D. DAX
+
+**✅ Correct Answer: C**
+
+> **Giải thích**:
+> - **(C) Đúng** — KQL (Kusto Query Language) là ngôn ngữ native của Eventhouse. Nó có hàm `parse_json()` và `extend` để extract fields từ JSON rất hiệu quả.
+> - **(A) Sai** — PySpark chạy trong Lakehouse Notebook, không phải Eventhouse.
+> - **(B) Sai** — T-SQL dùng trong Warehouse, không phải Eventhouse.
+> - **(D) Sai** — DAX dùng trong Power BI semantic model, không phải data transformation.
+
+---
+
+### Question 9
+
+**You need to create a denormalized product dimension table for a Gold layer. The source data is in three normalized Silver tables: Products, SubCategories, and Categories.**
+
+**Which approach correctly creates the denormalized dimension?**
+
+A. Create shortcuts from all three tables into the Gold folder  
+B. Create a view that JOINs the three tables and materialize it as a Delta table  
+C. Copy each table individually into the Gold layer  
+D. Use a Dataflow Gen2 to merge the three tables without any transformations
+
+**✅ Correct Answer: B**
+
+> **Giải thích**:
+> - **(B) Đúng** — Denormalization yêu cầu JOIN các bảng normalized lại thành 1 bảng phẳng. Cách chuẩn là viết query JOIN 3 bảng rồi save kết quả dưới dạng Delta table trong Gold layer.
+> - **(A) Sai** — Shortcuts chỉ tạo liên kết ảo, không thực hiện denormalization (JOIN).
+> - **(C) Sai** — Copy từng bảng riêng lẻ không tạo ra bảng denormalized.
+> - **(D) Sai** — "Merge without transformations" không có ý nghĩa — cần JOIN để denormalize.
+
+---
+
+### Question 10
+
+**In Microsoft Fabric, compute costs for querying data through an OneLake shortcut are charged to which capacity?**
+
+A. The capacity of the source where the original data resides  
+B. The capacity of the workspace where the shortcut was created (destination)  
+C. Costs are split evenly between source and destination  
+D. No compute costs are incurred for shortcut queries
+
+**✅ Correct Answer: B**
+
+> **Giải thích**:
+> - **(B) Đúng** — Chi phí compute khi query qua shortcut được tính trên **destination capacity** — tức capacity của workspace nơi shortcut nằm, KHÔNG phải capacity nơi data gốc lưu trữ.
+> - **(A) Sai** — Source capacity không bị charge cho queries từ shortcut.
+> - **(C) Sai** — Costs không chia đôi.
+> - **(D) Sai** — Vẫn có compute cost khi query.
+
+---
+
+*Tài liệu được tổng hợp dựa trên Skills Measured as of July 21, 2026*  
+*Nguồn tham khảo: Microsoft Learn, Microsoft Fabric Documentation*
+
+
+---
+
+## 11. BỔ SUNG CODE: PYSPARK, T-SQL VÀ KQL
+
+### 11.1 PySpark làm sạch và aggregate
+
+```python
+from pyspark.sql.functions import col, coalesce, lit, sum as spark_sum
+
+clean = (
+    spark.table("bronze.sales")
+    .dropDuplicates(["OrderId"])
+    .withColumn("Quantity", coalesce(col("Quantity"), lit(0)))
+    .filter(col("OrderDate").isNotNull())
+)
+
+gold = clean.groupBy("OrderDate", "Region").agg(
+    spark_sum(col("Quantity") * col("UnitPrice")).alias("Revenue")
+)
+gold.write.format("delta").mode("overwrite").saveAsTable("gold.daily_sales")
+```
+
+### 11.2 T-SQL aggregate trong Warehouse
+
+```sql
+SELECT
+    CAST(OrderDate AS date) AS OrderDate,
+    Region,
+    SUM(Quantity * UnitPrice) AS Revenue
+FROM dbo.Sales
+WHERE OrderDate IS NOT NULL
+GROUP BY CAST(OrderDate AS date), Region;
+```
+
+### 11.3 KQL transform trong Eventhouse
+
+```kusto
+Telemetry
+| where Timestamp >= ago(1h)
+| summarize AvgTemperature = avg(Temperature), Events = count()
+    by DeviceId, bin(Timestamp, 5m)
+| order by Timestamp desc
+```
+
+### 11.4 Câu hỏi tình huống bổ sung
+
+**Dữ liệu JSON lớn cần flatten, dedup, custom UDF và ghi Delta Silver. Team dùng Python. Chọn công cụ nào?**
+
+A. Notebook PySpark  
+B. Deployment pipeline  
+C. Sensitivity label  
+D. KQL Queryset trên Warehouse
+
+<details><summary>Đáp án</summary>
+
+**A.** Notebook/Spark phù hợp distributed transformation và logic code-first.
+</details>
+
+
+---
+
+## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
+
+- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [OneLake shortcuts](https://learn.microsoft.com/en-us/fabric/onelake/onelake-shortcuts)
+- [Copy activity](https://learn.microsoft.com/en-us/fabric/data-factory/copy-data-activity)
