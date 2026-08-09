@@ -3,11 +3,20 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 04/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
 > **Skills measured as of July 21, 2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
 > Tham chiếu: [Microsoft Learn — Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+
+> [!NOTE]
+> ### Cách dùng tài liệu này
+> Blueprint DP-700 hiện hành có thể hỏi **related topics** ngoài đúng từng bullet, vì vậy mục tiêu của tài liệu không phải học thuộc màn hình UI mà là hình thành phản xạ:
+>
+> `job status/error → Monitoring Hub` · `CU/throttling → Capacity Metrics` · `workspace logs/KQL → Workspace Monitoring` · `Spark stage → Spark UI` · `Warehouse query history → Query Insights`.
+>
+> Microsoft Learn: [Monitoring Hub](https://learn.microsoft.com/en-us/fabric/admin/monitoring-hub) · [Capacity Metrics](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app) · [Workspace Monitoring](https://learn.microsoft.com/en-us/fabric/data-factory/workspace-monitoring)
+
 
 ---
 
@@ -33,55 +42,49 @@ Microsoft Fabric cung cấp hai công cụ giám sát chính:
 | **Monitoring Hub** | Giám sát **tác vụ (operations)** — trạng thái, lỗi, lịch sử chạy | Data Engineers, Developers |
 | **Capacity Metrics App** | Giám sát **tài nguyên (resources)** — CU usage, throttling, cost | Capacity Admins |
 
+
 ### 1.2. Monitoring Hub — Chi tiết
 
-**Monitoring Hub** là trung tâm giám sát tập trung, truy cập từ navigation panel bên trái của Fabric portal.
+[Monitoring Hub](https://learn.microsoft.com/en-us/fabric/admin/monitoring-hub) là nơi xem **execution health, progress và outcome** của các Fabric jobs mà bạn có quyền xem.
 
-**Khả năng**:
-- Xem **real-time status** của mọi item: Pipeline, Notebook, Dataflow Gen2, Spark Job, Semantic Model refresh
-- Lọc theo: **Item type**, **Status** (Succeeded/Failed/Running/Cancelled), **Time range**
-- Drill-down vào chi tiết lỗi của từng activity trong pipeline
-- Xem **run history** của từng item
-- Liên kết trực tiếp tới item để debug
+**Bạn cần nhớ cho kỳ thi:**
+- Xem trạng thái `Running / Succeeded / Failed / Cancelled`.
+- Xem historical runs để so sánh, điều tra lỗi và xác nhận rerun; Microsoft hiện nêu khả năng điều tra các failure trong **30 ngày gần nhất**.
+- Filter theo status, item type, start time, submitter/location.
+- Với pipeline có **hierarchical view** để theo dõi upstream/downstream jobs.
+- Có thể retry toàn pipeline; trong run detail có thể rerun từ failed activity hoặc selected activity.
 
-**Các cột thông tin quan trọng**:
+Xem thêm: [Monitor pipeline runs in Monitoring Hub](https://learn.microsoft.com/en-us/fabric/data-factory/monitoring-hub-pipeline-runs).
 
-| Cột | Mô tả |
-|-----|--------|
-| **Activity Name** | Tên item đã chạy |
-| **Type** | Pipeline, Notebook, Dataflow, Spark Job... |
-| **Status** | Succeeded ✅, Failed ❌, Running 🔄, Cancelled ⛔ |
-| **Start Time** | Thời gian bắt đầu |
-| **Duration** | Thời gian chạy |
-| **Submitted By** | Người/Service Principal kích hoạt |
-| **Workspace** | Workspace chứa item |
+> 📌 **Điểm thi:** Monitoring Hub trả lời câu hỏi **“job nào chạy/fail và fail ở đâu?”**. Nó không phải bằng chứng trực tiếp rằng capacity đang thiếu CU.
+
 
 ### 1.3. Capacity Metrics App — Chi tiết
 
-**Microsoft Fabric Capacity Metrics App** cung cấp dashboard cho capacity administrators.
+[Microsoft Fabric Capacity Metrics app](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app) dùng để phân tích **resource consumption** và capacity health.
 
-**Các trang chính**:
+Các view quan trọng:
 
-| Trang | Chức năng |
-|-------|----------|
-| **Health Page** | Tổng quan sức khỏe capacity — phát hiện throttling, query rejection |
-| **Compute Page** | Chi tiết sử dụng CU trong 14 ngày — trends, peak hours |
-| **Items Tab** | Xác định item nào tiêu tốn nhiều CU nhất |
-| **Timepoint Explorer** | Phân tích chi tiết tại một thời điểm cụ thể |
+| View | Dùng để làm gì? |
+|---|---|
+| **Health** | Nhìn throttling/rejection và capacity health |
+| **Compute** | CU consumption, operations, trends; lịch sử thường dùng 14 ngày |
+| **Timepoint / Timepoint Summary** | Drill vào một timepoint khoảng 30 giây để tìm operation tiêu thụ resource |
 
-**Metrics quan trọng**:
+#### Smoothing và throttling — bẫy thi quan trọng
 
-| Metric | Ý nghĩa | Ngưỡng cảnh báo |
-|--------|---------|------------------|
-| **CU Utilization %** | % sử dụng capacity tại timepoint | >100% cho thấy overload; throttling/delay/rejection phụ thuộc smoothing windows và autoscale |
-| **Overages** | Lượng CU vượt quá capacity | Cần scale up |
-| **Throttling Events** | Số lần bị giới hạn tốc độ | Nên = 0 |
-| **Rejected Requests** | Requests bị từ chối do hết capacity | Nên = 0 |
-| **Interactive vs Background** | Tỷ lệ workload interactive/background | Cân bằng |
+**Không học:** `CU > 100% = reject ngay`.
 
-> 📌 **Điểm thi**: Monitoring Hub → **operational monitoring** (job status, errors). Capacity Metrics App → **resource monitoring** (CU usage, throttling, cost optimization).
+Fabric áp dụng smoothing/overage protection. Khi overload kéo dài, mức ảnh hưởng có thể tiến triển từ overage protection → interactive delay → interactive rejection → background rejection. Microsoft hiện mô tả các khoảng điển hình khoảng **10 phút, 60 phút và 24 giờ**, nhưng hãy dùng documentation hiện hành làm source of truth.
 
----
+Tham khảo: [Capacity Metrics Compute page](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app-compute-page).
+
+**Decision pattern:**
+- Nhiều workload cùng chậm/timeout → **Capacity Metrics**.
+- Một Spark stage có vài straggler tasks → **Spark UI**, chưa vội scale capacity.
+- Peak 120–130% nhưng chưa reject → xem smoothing/throttling timeline, không kết luận Metrics sai.
+
+> 📌 **Điểm thi:** Monitoring Hub = **operational status**. Capacity Metrics = **resource health/CU/throttling**.
 
 ## 2. Monitor Data Ingestion
 
@@ -124,18 +127,41 @@ Mirrored databases có trang monitoring riêng:
 - **Last Sync Time**: Thời điểm sync gần nhất
 - **Lag**: Độ trễ replication
 
+
 ### 2.4. Eventstream Monitoring
 
-Trong Eventstream workspace monitoring (nếu enabled):
-- **Message Count**: Số events đã xử lý
-- **Throughput**: Events/second
-- **Node Status**: Trạng thái từng node trong topology
-- **Error Metrics**: Số events bị lỗi
-- **Backlog**: Số events đang chờ xử lý
+Khi [Workspace Monitoring](https://learn.microsoft.com/en-us/fabric/data-factory/workspace-monitoring) được bật, Eventstream có thể ghi metrics/error information vào monitoring Eventhouse.
 
-> ⚠️ **Lưu ý**: Eventstream workspace monitoring tiêu tốn capacity. Cần tính toán resource khi enable.
+Các bảng quan trọng có thể gặp:
+- `EventStreamNodeStatus`
+- `EventStreamMetrics`
+- `EventStreamErrorMetrics`
 
----
+Mental model:
+
+```text
+Không có data / latency tăng
+├─ Source có phát event không?
+├─ Processor/transform node có xử lý không?
+└─ Destination có nhận/commit được không?
+```
+
+Ví dụ KQL:
+
+```kusto
+EventStreamErrorMetrics
+| where Timestamp > ago(1h)
+| order by Timestamp desc
+```
+
+```kusto
+EventStreamMetrics
+| where Timestamp > ago(30m)
+| summarize AvgValue = avg(MetricValue) by ArtifactId, MetricName
+| order by AvgValue desc
+```
+
+> ⚠️ **Preview caveat:** Workspace monitoring cho Eventstream còn Preview; eventstream cũ có thể cần republish và một số bảng/metrics có độ trễ hoặc chưa có detailed diagnostic logs. Không học một “topology limit” cứng nếu Microsoft Learn hiện tại không xác nhận.
 
 ## 3. Monitor Data Transformation
 
@@ -183,34 +209,52 @@ Trong Eventstream workspace monitoring (nếu enabled):
 - **Rows processed**: Số rows xử lý
 - **Duration per query**: Thời gian xử lý từng query
 
+
 ### 3.3. Warehouse Query Monitoring
 
-**queryinsights.exec_requests_history** — DMV (Dynamic Management View) trong Warehouse:
+Dùng [Query Insights](https://learn.microsoft.com/en-us/fabric/data-warehouse/query-insights) để xem historical query execution trong Fabric Warehouse.
+
+Các view trọng yếu:
+- `queryinsights.exec_requests_history`
+- `queryinsights.exec_sessions_history`
+- `queryinsights.long_running_queries`
+- `queryinsights.frequently_run_queries`
+
+Ví dụ tìm query scan nhiều dữ liệu từ OneLake:
 
 ```sql
--- Xem lịch sử query execution
-SELECT 
-    command,
+SELECT TOP 20
+    distributed_statement_id,
+    query_hash,
     status,
     start_time,
     end_time,
-    DATEDIFF(second, start_time, end_time) AS duration_seconds,
-    result_cache_hit,
-    row_count
+    allocated_cpu_time_ms,
+    data_scanned_remote_storage_mb,
+    data_scanned_memory_mb,
+    data_scanned_disk_mb,
+    command
 FROM queryinsights.exec_requests_history
-ORDER BY start_time DESC;
-
--- Tìm queries chậm nhất
-SELECT TOP 10
-    command,
-    DATEDIFF(second, start_time, end_time) AS duration_seconds,
-    row_count
-FROM queryinsights.exec_requests_history
-WHERE status = 'Succeeded'
-ORDER BY duration_seconds DESC;
+ORDER BY data_scanned_remote_storage_mb DESC;
 ```
 
----
+Ví dụ tìm query tốn CPU:
+
+```sql
+SELECT TOP 20
+    query_hash,
+    allocated_cpu_time_ms,
+    data_scanned_remote_storage_mb,
+    command
+FROM queryinsights.exec_requests_history
+ORDER BY allocated_cpu_time_ms DESC;
+```
+
+**Cold-cache reasoning:** `data_scanned_remote_storage_mb > 0` nghĩa execution phải fetch data từ OneLake. Không benchmark Warehouse chỉ dựa vào lần chạy đầu tiên.
+
+Xem: [Warehouse performance guidelines](https://learn.microsoft.com/en-us/fabric/data-warehouse/guidelines-warehouse-performance).
+
+> ⚠️ **Hiệu chỉnh:** Không dùng `result_cache_hit` như một cột bắt buộc của `queryinsights.exec_requests_history`; documentation hiện tại tập trung vào memory/disk/remote-storage scan metrics.
 
 ## 4. Monitor Semantic Model Refresh
 
@@ -239,473 +283,301 @@ Pipeline:
     └── On failure → Notification
 ```
 
-### 4.3. Monitor Direct Lake Refresh (Reframing)
 
-**Đặc điểm Direct Lake**:
-- **Không cần schedule refresh thường xuyên** — tự động detect thay đổi trong Delta tables
-- "Refresh" thực chất là **reframing** — cập nhật metadata trỏ tới files mới
-- Chi phí rất thấp so với Import mode
+### 4.3. Monitor Direct Lake Refresh (Framing)
 
-**Setting quan trọng**:
-- **"Keep your Direct Lake data up to date"** — Bật để tự động reframe khi Delta table thay đổi
+Tài liệu chính: [How Direct Lake works](https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-how-it-works).
 
-**Troubleshoot Direct Lake**:
+**Khái niệm phải phân biệt:**
+- **Automatic updates** của Direct Lake semantic model mặc định được bật.
+- Refresh có thể **frame** model tới trạng thái metadata/data mới.
+- **Direct Lake on OneLake** chạy exclusively ở `DirectLakeOnly` và **không hỗ trợ DirectQuery fallback**.
+- **Direct Lake on SQL endpoints** mới có khả năng fallback sang DirectQuery.
 
-| Vấn đề | Nguyên nhân | Giải pháp |
-|--------|------------|-----------|
-| Dữ liệu cũ/stale | Setting auto-update bị tắt | Bật "Keep your Direct Lake data up to date" |
-| Schema mismatch error | Cột trong Delta table bị đổi tên/xóa | Update semantic model, republish |
-| Fallback to DirectQuery | Unsupported DAX/features | Chuyển sang DirectLakeOnly mode |
-| Permission denied | Thiếu Read access trên Lakehouse | Gán Read permission cho user/SPN |
-| Data chưa phản ánh | Chưa framing/schema sync hoặc automatic updates tắt | Refresh/reframe semantic model, kiểm tra refresh history và automatic updates; không dùng mốc chờ 20 phút như quy tắc |
+#### DirectLakeBehavior — chỉ cho Direct Lake on SQL endpoints
 
-> 📌 **Điểm thi**: Direct Lake refresh **KHÔNG** giống Import refresh. Nó là metadata operation rất nhẹ. Không cần schedule frequent refreshes — thường tự động sync.
+| Giá trị | Hành vi |
+|---|---|
+| `Automatic` | Default; có thể fallback DirectQuery |
+| `DirectLakeOnly` | Nếu không đáp ứng Direct Lake thì query fail — hữu ích khi development |
+| `DirectQueryOnly` | Ép DirectQuery để test |
 
----
+Các nguyên nhân fallback phổ biến:
+- RLS/DDM/OLS được định nghĩa ở SQL endpoint;
+- unmaterialized SQL views;
+- Delta table vượt guardrails;
+- table chưa được frame sau thay đổi;
+- capacity memory pressure.
+
+**DAX chẩn đoán:**
+
+```dax
+EVALUATE TABLETRAITS()
+```
+
+Xem cột `DirectLakeFallbackInfo`.
+
+> 📌 **Exam trap:** “Fallback → chọn DirectLakeOnly” chỉ hợp lý khi model là **Direct Lake on SQL endpoint**. Direct Lake on OneLake vốn không fallback.
+
 
 ## 5. Configure Alerts
 
-### 5.1. Phương pháp alerting trong Fabric
+### 5.1. Decision table
 
-| Phương pháp | Complexity | Use Case |
-|------------|-----------|----------|
-| **Built-in Failure Notifications** | Thấp | Email khi scheduled run fails |
-| **Activator** | Trung bình | Alert phức tạp, Teams/email, Fabric job/workspace events |
-| **Power Automate** | Trung bình | Custom workflow khi có sự kiện |
-| **Custom (API + Logic App)** | Cao | Enterprise-grade monitoring |
+| Requirement | Lựa chọn phù hợp |
+|---|---|
+| Email đơn giản khi **scheduled pipeline** fail | Built-in scheduled failure notification |
+| Alert manual + scheduled Job events, Teams/email, custom condition | **Activator on Job events** |
+| Alert toàn workspace dựa trên logs/KQL | **Workspace Monitoring + KQL Queryset + Activator** |
+| Khi activity fail thì pipeline tự gửi thông báo/cleanup | Outlook/Teams activity + dependency path |
+| Natural-language operations monitoring | Operations Agent (Preview), kiến thức bổ sung |
 
 ### 5.2. Built-in Failure Notifications
 
-**Cách cấu hình** (đơn giản nhất):
-1. Mở item (Pipeline / Notebook / Dataflow)
-2. Chọn **Schedule** tab
-3. Tìm phần **"Failure notifications"**
-4. Thêm email addresses
-5. Save
+Với scheduled pipeline runs, có thể cấu hình email failure notification.
 
-**Giới hạn**:
-- Chỉ hoạt động cho **scheduled runs** (không alert cho manual runs)
-- Chỉ hỗ trợ **email** (không Teams, không webhook)
-- Không có logic phức tạp (chỉ "on failure")
+**Giới hạn cần nhớ:**
+- đơn giản;
+- chủ yếu scheduled runs;
+- email;
+- không thay thế custom condition/Teams alert cho mọi run.
 
-### 5.3. Fabric Activator
+Tham khảo: [Create alerts for pipeline runs](https://learn.microsoft.com/en-us/fabric/data-factory/create-alerts-for-pipeline-runs).
 
-Data Activator cho phép tạo alerts phức tạp hơn dựa trên **Fabric Job Events**.
+### 5.3. Fabric Activator trên Job Events
 
-**Kiến trúc**:
-```
-Fabric Job Events ──► Real-Time hub / Eventstream ──► Activator
-                                            │
-                                      ┌─────┼─────┐
-                                      │     │     │
-                                    Email  Teams  Custom
-                                    Alert  Alert  Action
+[Job events trong Real-Time hub](https://learn.microsoft.com/en-us/fabric/real-time-hub/explore-fabric-job-events) có action **Set alert** để tạo Activator rule trực tiếp.
+
+```text
+Fabric Job Events
+      │
+      ├─ Set alert → Activator → Email / Teams / Run Fabric activity
+      │
+      └─ Create Eventstream → khi cần route/transform/fan-out
 ```
 
-**Bước cấu hình**:
+> ⚠️ **Hiệu chỉnh quan trọng:** Muốn dùng Activator cho Job events **không bắt buộc** phải tạo Eventstream. Eventstream chỉ là một lựa chọn khi cần stream processing/routing.
 
-1. **Tạo Eventstream** mới trong workspace
-2. **Add Source**: Chọn "Fabric Job Events" → chọn workspace & item types (Pipeline, Notebook, etc.)
-3. **Add Destination**: Chọn "Data Activator" (hoặc "New Reflex")
-4. **Trong Data Activator**:
-   - Tạo Object dựa trên event stream
-   - Tạo **Rule**: `When status equals "Failed"`
-   - Chọn **Action**: Email hoặc Teams message
-5. **Start** trigger
+### 5.4. Workspace-wide pipeline failure alert bằng KQL
 
-**Ví dụ Rule trong Data Activator**:
-```
-Object: Pipeline_Job_Events
-├── Property: Status (from event stream)
-├── Condition: Status equals "Failed"
-├── Action: Send email to admin@company.com
-│   Subject: "Pipeline {ItemName} failed at {Timestamp}"
-│   Body: "Error: {ErrorMessage}"
-└── Start trigger
+Theo [Workspace Monitoring](https://learn.microsoft.com/en-us/fabric/data-factory/workspace-monitoring):
+
+```kusto
+ItemJobEventLogs
+| extend SecondsAgo = datetime_diff('second', now(), ingestion_time())
+| where JobType == "Pipeline" and JobStatus == "Failed"
+| where SecondsAgo <= 540
+| order by Timestamp desc
+| project Timestamp, ItemName, WorkspaceName, JobStartTime, JobEndTime, JobStatus
 ```
 
-### 5.4. Power Automate Integration
+Sau đó:
+1. tạo **KQL Queryset**;
+2. dùng KQL Queryset trigger trong **Activator**;
+3. chọn action Email/Teams;
+4. enable rule.
 
-Dùng Power Automate cho custom workflow:
-- Trigger: "When a Fabric item fails"
-- Action: Post message to Teams channel, create Jira ticket, send SMS...
+### 5.5. Workflow notification trong Pipeline
 
-### 5.5. So sánh các phương pháp Alert
+Nếu requirement là *“activity X fail thì ngay trong pipeline gửi Teams rồi cleanup”*:
 
-| Tiêu chí | Built-in Notifications | Data Activator | Power Automate |
-|----------|:----------------------|:---------------|:---------------|
-| **Setup time** | 1 phút | 15 phút | 30+ phút |
-| **Email alert** | ✅ | ✅ | ✅ |
-| **Teams alert** | ❌ | ✅ | ✅ |
-| **Manual run alert** | ❌ | ✅ | ✅ |
-| **Custom logic** | ❌ | ✅ | ✅ |
-| **No-code** | ✅ | ✅ | ✅ |
-| **Cost** | Free | CU consumption | Per-flow license |
+```text
+Copy Activity
+   ├─ On Success → Next
+   └─ On Failure → Teams/Outlook Activity → Cleanup
+```
 
-> 📌 **Tip thi**: 
-> - Câu hỏi "simple email on scheduled failure" → **Built-in Failure Notifications**
-> - Câu hỏi "Teams notification / complex conditions" → **Activator**
+Đây là **orchestration error handling**, khác centralized monitoring.
 
----
+> 📌 **Tip thi:**  
+> `simple scheduled email` → built-in notification  
+> `manual + scheduled / Teams / complex condition` → Activator  
+> `workspace-wide KQL alert` → Workspace Monitoring + KQL + Activator
+
 
 ## 6. Câu hỏi mô phỏng bài thi (Practice Questions)
 
-### Question 1
+### Question 1 — Job status
 
-**You are a Fabric administrator. Users report that their Spark notebooks are running slower than usual, and some pipelines are failing with timeout errors. You need to determine whether the issue is caused by capacity resource exhaustion.**
-
-**Which tool should you use?**
-
-A. Monitoring Hub  
-B. Microsoft Fabric Capacity Metrics App  
-C. Spark UI  
-D. Power BI Service Admin Portal
-
-**✅ Correct Answer: B**
-
-> **Giải thích**:
-> - **(B) Đúng** — Capacity Metrics App hiển thị CU utilization, throttling events, và rejected requests. Nếu capacity bị exhaustion → throttling → notebooks chậm, pipelines timeout.
-> - **(A) Sai** — Monitoring Hub cho thấy job status (succeeded/failed) nhưng KHÔNG cho thấy resource utilization hay throttling.
-> - **(C) Sai** — Spark UI chỉ hiển thị metrics của một Spark session cụ thể, không phải tổng thể capacity.
-> - **(D) Sai** — Admin Portal quản lý tenant settings, không phải capacity monitoring.
-
----
-
-### Question 2
-
-**You need to configure alerts so that your team receives a Microsoft Teams notification whenever a data pipeline fails, including both scheduled and manually triggered runs.**
-
-**Which approach should you use?**
-
-A. Configure the built-in failure notification in the pipeline's Schedule settings  
-B. Create a Activator connected to Fabric Job Events via an Eventstream  
-C. Use Power BI alerts on a dashboard tile  
-D. Set up email forwarding rules in Outlook
-
-**✅ Correct Answer: B**
-
-> **Giải thích**:
-> - **(B) Đúng** — Data Activator + Eventstream (Fabric Job Events) cho phép: (1) Teams notifications, (2) alert cho cả scheduled VÀ manual runs, (3) custom logic/conditions.
-> - **(A) Sai** — Built-in failure notifications chỉ hỗ trợ email và chỉ cho scheduled runs, KHÔNG hỗ trợ Teams hay manual runs.
-> - **(C) Sai** — Power BI alerts dành cho data-driven alerts trên dashboard tiles, không phải pipeline monitoring.
-> - **(D) Sai** — Email forwarding không giải quyết vấn đề tại nguồn.
-
----
-
-### Question 3
-
-**Your organization uses Direct Lake mode for Power BI semantic models connected to a Fabric Lakehouse. Users report that some reports show stale data despite the underlying Delta tables being updated 2 hours ago.**
-
-**What should you check FIRST?**
-
-A. Schedule a frequent Import refresh for the semantic model  
-B. Verify that the "Keep your Direct Lake data up to date" setting is enabled  
-C. Recreate the semantic model from scratch  
-D. Increase the Fabric capacity size
-
-**✅ Correct Answer: B**
-
-> **Giải thích**:
-> - **(B) Đúng** — Direct Lake tự động detect changes (reframing) khi setting "Keep your Direct Lake data up to date" được bật. Nếu tắt → model không tự động cập nhật → stale data.
-> - **(A) Sai** — Direct Lake KHÔNG cần Import refresh. Schedule frequent refreshes là unnecessary và có thể conflict với auto-reframing.
-> - **(C) Sai** — Tạo lại model là quá mức, chỉ cần kiểm tra settings.
-> - **(D) Sai** — Capacity size không liên quan tới Direct Lake freshness.
-
----
-
-### Question 4
-
-**You are monitoring a Spark notebook execution and notice that one stage takes significantly longer than others. In the Spark UI, you observe that most tasks in the stage complete in 5 seconds, but 2 tasks take over 10 minutes.**
-
-**What is the most likely cause?**
-
-A. Insufficient executor memory  
-B. Data skew causing uneven task distribution  
-C. Network latency to the source  
-D. Incorrect checkpoint location
-
-**✅ Correct Answer: B**
-
-> **Giải thích**:
-> - **(B) Đúng** — Khi hầu hết tasks hoàn thành nhanh nhưng vài tasks mất rất lâu, đây là dấu hiệu điển hình của **data skew** — một số partitions chứa data nhiều hơn hẳn các partition khác → gây "straggler tasks".
-> - **(A) Sai** — Thiếu memory gây disk spill cho TẤT CẢ tasks, không chỉ vài tasks.
-> - **(C) Sai** — Network latency ảnh hưởng đều tới tất cả tasks.
-> - **(D) Sai** — Checkpoint location ảnh hưởng streaming, không liên quan tới stage duration skew.
-
----
-
-### Question 5
-
-**A Dataflow Gen2 that was running successfully for months suddenly starts failing with an error about "insufficient permissions for accessing staging artifacts."**
-
-**What is the most likely cause and fix?**
-
-A. The Lakehouse destination was deleted — recreate the Lakehouse  
-B. The Fabric capacity was scaled down — increase capacity  
-C. The original Dataflow creator has not signed in for over 90 days — have a current user take ownership  
-D. The Dataflow Gen2 query contains invalid M code — fix the query
-
-**✅ Correct Answer: C**
-
-> **Giải thích**:
-> - **(C) Đúng** — Đây là lỗi phổ biến của Dataflow Gen2. Khi người tạo Dataflow không sign in trong >90 ngày (hoặc rời tổ chức), token hết hạn → không thể access staging artifacts. Giải pháp: một user hiện tại **take ownership** của Dataflow.
-> - **(A) Sai** — Lỗi nói về "staging artifacts", không phải destination.
-> - **(B) Sai** — Capacity scaling gây throttling, không phải permission errors.
-> - **(D) Sai** — Invalid M code gây lỗi khác (syntax/transformation errors).
-
----
-
-### Question 6
-
-**You need to view the centralized status of ALL Fabric items (pipelines, notebooks, dataflows, semantic models) across multiple workspaces to quickly identify failures in the last 24 hours.**
-
-**Which tool should you use?**
-
-A. Power BI Admin Portal  
-B. Monitoring Hub  
-C. Microsoft Fabric Capacity Metrics App  
-D. Azure Monitor
-
-**✅ Correct Answer: B**
-
-> **Giải thích**:
-> - **(B) Đúng** — Monitoring Hub cung cấp centralized view của tất cả Fabric item runs, có thể lọc theo time range (last 24 hours), status (Failed), và item type. Đây là công cụ duy nhất cho operational monitoring tập trung.
-> - **(A) Sai** — Admin Portal quản lý tenant-level settings, không phải job monitoring.
-> - **(C) Sai** — Capacity Metrics App theo dõi resource usage, không phải job status.
-> - **(D) Sai** — Azure Monitor tích hợp với Azure resources, không trực tiếp với Fabric items.
-
----
-
-### Question 7
-
-**You are troubleshooting a Direct Lake semantic model that unexpectedly falls back to DirectQuery mode, causing poor report performance.**
-
-**Which action should you take to prevent this fallback?**
-
-A. Schedule more frequent Import refreshes  
-B. Configure the model to use "DirectLakeOnly" behavior mode  
-C. Increase the size of the Lakehouse tables  
-D. Convert the model to Import mode
-
-**✅ Correct Answer: B**
-
-> **Giải thích**:
-> - **(B) Đúng** — Setting "DirectLakeOnly" mode ngăn model fallback sang DirectQuery. Nếu model không thể query Direct Lake (do unsupported DAX), nó sẽ báo lỗi thay vì silently fallback. Điều này giúp phát hiện và fix vấn đề gốc.
-> - **(A) Sai** — Direct Lake không dùng Import refresh.
-> - **(C) Sai** — Kích thước table không liên quan tới DirectQuery fallback.
-> - **(D) Sai** — Chuyển sang Import mode mất hết lợi ích Direct Lake.
-
----
-
-### Question 8
-
-**Your team uses the Fabric Capacity Metrics App and notices that CU utilization consistently exceeds 100% during business hours, resulting in throttling.**
-
-**Which TWO actions can help resolve this? (Select TWO)**
-
-A. Move heavy background jobs to run during off-peak hours  
-B. Delete the Monitoring Hub  
-C. Enable Autoscale Billing for Spark workloads  
-D. Disable all scheduled refreshes  
-E. Reduce the number of workspaces
-
-**✅ Correct Answers: A and C**
-
-> **Giải thích**:
-> - **(A) Đúng** — Shifting background workloads (batch pipelines, OPTIMIZE tasks) tới off-peak hours giảm CU pressure trong business hours.
-> - **(C) Đúng** — Autoscale Billing cho Spark chạy jobs trên serverless resources riêng, không impact shared capacity pool → giảm throttling.
-> - **(B) Sai** — Xóa Monitoring Hub không giảm CU usage.
-> - **(D) Sai** — Disable ALL refreshes là quá extreme và ảnh hưởng business.
-> - **(E) Sai** — Số lượng workspaces không trực tiếp ảnh hưởng CU usage — workload mới quan trọng.
-
----
-
-*Tài liệu được tổng hợp dựa trên Skills Measured as of July 21, 2026*  
-*Nguồn tham khảo: Microsoft Learn, Microsoft Fabric Documentation*
-
-
----
-
-## 7. BỔ SUNG ÔN THI 2026: WORKSPACE-WIDE ALERT BẰNG KQL
-
-Khi workspace monitoring ghi job logs vào Eventhouse, có thể dùng KQL Queryset + Activator:
-
-```kusto
-ItemJobEventLogs
-| where ingestion_time() > ago(10m)
-| where JobType == "Pipeline" and JobStatus == "Failed"
-| project Timestamp, WorkspaceName, ItemName, JobInstanceId, JobStatus
-| order by Timestamp desc
-```
-
-### Cách chọn công cụ
-
-- **Monitoring Hub:** run status và drill-down operation.
-- **Capacity Metrics app:** CU, overload, smoothing và throttling/rejection.
-- **Built-in failure notification:** email cho scheduled pipeline failure.
-- **Activator/Job events:** manual + scheduled, Teams/email và conditions phức tạp.
-
-### Câu hỏi tình huống bổ sung
-
-**Capacity đạt peak 130% trong một timepoint nhưng không có request bị reject. Kết luận nào đúng nhất?**
-
-A. Metrics app bị sai  
-B. Overload không nhất thiết gây rejection ngay; smoothing/overage protection và autoscale quyết định delay/rejection  
-C. Mọi job đã thất bại  
-D. Phải VACUUM Warehouse
-
-<details><summary>Đáp án</summary>
-
-**B.** Không đồng nhất “>100%” với “mọi request lập tức bị throttled/rejected”.
-</details>
-
-
----
-
-## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
-
-- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
-- [Capacity Metrics Compute page](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app-compute-page)
-- [Pipeline alerts](https://learn.microsoft.com/en-us/fabric/data-factory/create-alerts-for-pipeline-runs)
-- [Job events](https://learn.microsoft.com/en-us/fabric/real-time-hub/explore-fabric-job-events)
-
----
-
-## 7. CÂU HỎI SCENARIO — MONITORING & ALERTS
-
-> Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
-
-### Câu D3-M1 — Monitoring Hub: Operational Run Status
-
-**Cần xem trạng thái (Success/Failed/Running) của tất cả pipeline và notebook runs trong workspace trong 24 giờ qua. Công cụ nào phù hợp?**
-
-A. Monitoring Hub  
-B. Capacity Metrics app  
-C. Git repo commit history  
-D. Domain admin portal  
-
-<details><summary>Đáp án và giải thích</summary>
-
-**A.** [Monitoring Hub](https://learn.microsoft.com/en-us/fabric/admin/monitoring-hub) là nơi xem **operational run status** của tất cả Fabric items (pipeline, notebook, Dataflow, Spark job) trong workspace. Capacity Metrics app theo dõi resource usage của capacity, không phải run status từng item.
-
-</details>
-
----
-
-### Câu D3-M2 — Capacity Metrics: Resource Health
-
-**Cần xác định item nào đang tiêu thụ nhiều CU (Capacity Units) nhất và nguyên nhân capacity bị throttled. Công cụ nào phù hợp?**
+Bạn cần xem pipeline nào fail trong 24 giờ qua và drill-down vào failed activity.
 
 A. Capacity Metrics app  
-B. Monitoring Hub only  
-C. KQL database schema browser  
-D. Deployment pipeline  
+B. Monitoring Hub  
+C. Git Integration  
+D. Domain settings  
 
-<details><summary>Đáp án và giải thích</summary>
-
-**A.** [Capacity Metrics app](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app) phân tích **capacity resource usage** — xem CU consumption theo item, identify top consumers, xem smoothing và throttling stages. Monitoring Hub theo dõi operational status, không phải capacity health.
-
-</details>
+**✅ Đáp án: B**
 
 ---
 
-### Câu D3-M3 — Alert Email Đơn Giản Cho Pipeline
+### Question 2 — Capacity overload
 
-**Pipeline scheduled chạy hàng ngày. Muốn nhận email khi pipeline fail mà không cần cấu hình phức tạp. Giải pháp ít vận hành nhất?**
+Nhiều notebooks và pipelines cùng chậm. Bạn cần chứng minh capacity có bị throttling.
 
-A. Built-in failure notification trong pipeline settings  
-B. Tạo custom Spark pool  
-C. V-Order optimization  
-D. RLS trên Lakehouse  
+A. Spark UI của một notebook  
+B. Fabric Capacity Metrics app  
+C. Deployment Pipeline  
+D. SQL endpoint  
 
-<details><summary>Đáp án và giải thích</summary>
-
-**A.** [Built-in failure notification](https://learn.microsoft.com/en-us/fabric/data-factory/create-alerts-for-pipeline-runs) trong pipeline settings cho phép cấu hình email alert khi pipeline fail chỉ bằng vài click — không cần code, không cần external service. Đây là giải pháp có **operational overhead thấp nhất** cho use case này.
-
-</details>
+**✅ Đáp án: B**
 
 ---
 
-### Câu D3-M4 — Activator Cho Alert Phức Tạp
+### Question 3 — CU trên 100%
 
-**Cần gửi thông báo Teams cho cả manual và scheduled failures, với condition phức tạp (ví dụ: chỉ alert khi failure rate > 20% trong 1 giờ). Giải pháp nào phù hợp?**
+Capacity Metrics hiển thị 125% trong một timepoint nhưng chưa reject requests.
 
-A. Activator trên Job events hoặc KQL query  
-B. Chỉ dùng scheduled email notification  
+A. Metrics sai  
+B. Trên 100% luôn reject ngay  
+C. Smoothing/throttling phụ thuộc overload kéo dài; xem Health/Compute timeline  
+D. Xóa Monitoring Hub  
+
+**✅ Đáp án: C**
+
+---
+
+### Question 4 — Spark skew
+
+Trong một Spark stage, 98 tasks chạy 5 giây, 2 tasks chạy 8 phút.
+
+A. Data skew  
+B. Direct Lake fallback  
+C. Git conflict  
+D. V-Order  
+
+**✅ Đáp án: A**
+
+---
+
+### Question 5 — Teams alert cho manual + scheduled failures
+
+A. Built-in scheduled email only  
+B. Activator trên Fabric Job events  
 C. VACUUM  
-D. GitHub issue tracker  
+D. Refresh history  
 
-<details><summary>Đáp án và giải thích</summary>
-
-**A.** [Activator](https://learn.microsoft.com/en-us/fabric/real-time-hub/explore-fabric-job-events) (Fabric Data Activator) cho phép định nghĩa **custom conditions và actions** — monitor Job events hoặc KQL query results, trigger Teams/email/webhook khi condition thỏa mãn. Phù hợp cho alert logic phức tạp hơn built-in notification.
-
-</details>
+**✅ Đáp án: B**
 
 ---
 
-### Câu D3-M5 — Overload CU > 100%
+### Question 6 — Workspace-wide alert
 
-**Capacity Metrics app hiển thị CU usage đạt 120% trong một số timepoints. Tuy nhiên không có request nào bị reject ngay lập tức. Giải thích nào đúng nhất?**
+Bạn muốn query failed pipelines trong toàn workspace bằng KQL rồi alert nếu có lỗi trong 10 phút gần nhất.
 
-A. Metrics app bị lỗi — không thể vượt 100%  
-B. Overload không đồng nghĩa rejection ngay — **smoothing**, **overage protection**, và **autoscale** quyết định khi nào throttling xảy ra  
-C. Mọi job đã thất bại  
-D. Phải chạy VACUUM Warehouse ngay  
+A. Workspace Monitoring → KQL Queryset → Activator  
+B. Spark UI  
+C. Dataflow Query Folding  
+D. GitHub  
 
-<details><summary>Đáp án và giải thích</summary>
-
-**B.** [Fabric capacity throttling](https://learn.microsoft.com/en-us/fabric/enterprise/throttling) là tiến trình nhiều giai đoạn: first rejection xảy ra ở mức overload cao và kéo dài, không phải ngay khi vượt 100%. **Smoothing** làm mờ peaks tạm thời; **overage protection** cho phép burst một thời gian ngắn. Điều này là điểm bẫy phổ biến trong đề thi.
-
-</details>
+**✅ Đáp án: A**
 
 ---
 
-## 8. LAB THỰC HÀNH — WORKSPACE MONITORING
+### Question 7 — Direct Lake fallback
 
-### Lab 9 — KQL Query Cho Workspace Monitoring
+Semantic model dùng **Direct Lake on SQL endpoint** đang fallback. Trong development, bạn muốn fallback trở thành lỗi rõ ràng để tìm root cause.
 
-**Mục tiêu:** Sử dụng KQL để phân tích job events trong workspace và tính failure rate.
+A. Import mode  
+B. `DirectLakeBehavior = DirectLakeOnly`  
+C. Disable automatic updates  
+D. Increase Dataflow memory  
 
-```kusto
-// Query workspace job events từ 30 phút qua
-// (Table ItemJobEventLogs có sẵn trong Fabric Real-Time Hub)
-ItemJobEventLogs
-| where ingestion_time() > ago(30m)
-| summarize
-    TotalRuns    = count(),
-    FailedRuns   = countif(JobStatus == "Failed"),
-    SuccessRuns  = countif(JobStatus == "Succeeded")
-    by JobType, ItemName
-| extend FailureRate = todouble(FailedRuns) / TotalRuns
-| where TotalRuns > 0
-| order by FailureRate desc
+**✅ Đáp án: B**
+
+Sau đó có thể dùng:
+
+```dax
+EVALUATE TABLETRAITS()
 ```
 
-**Giải thích từng bước:**
+---
 
-| Bước | KQL | Mục đích |
-|------|-----|---------|
-| 1 | `where ingestion_time() > ago(30m)` | Lọc 30 phút gần nhất |
-| 2 | `summarize count() by JobType, ItemName` | Đếm theo item và loại job |
-| 3 | `countif(JobStatus == "Failed")` | Đếm riêng lần thất bại |
-| 4 | `extend FailureRate = ...` | Tính tỷ lệ thất bại |
-| 5 | `order by FailureRate desc` | Item có failure rate cao nhất lên đầu |
+### Question 8 — Direct Lake on OneLake
 
-**Mở rộng: Alert khi failure rate cao**
+Câu nào đúng?
+
+A. Có DirectQuery fallback mặc định  
+B. Không hỗ trợ DirectQuery fallback  
+C. Bắt buộc Import refresh  
+D. Bắt buộc SQL endpoint  
+
+**✅ Đáp án: B**
+
+---
+
+## 7. KQL/SQL Cheat Sheet
+
+### Failed jobs
 
 ```kusto
-// Cấu hình Activator để alert khi FailureRate > 0.5 (50%)
 ItemJobEventLogs
-| where ingestion_time() > ago(1h)
-| summarize
-    FailedRuns = countif(JobStatus == "Failed"),
-    TotalRuns  = count()
-    by ItemName
-| extend FailureRate = todouble(FailedRuns) / TotalRuns
-| where FailureRate > 0.5 and TotalRuns >= 3   // Ít nhất 3 runs mới alert
-| project ItemName, FailureRate, FailedRuns, TotalRuns
+| where Timestamp > ago(24h)
+| where JobStatus == "Failed"
+| summarize Failures = count() by ItemKind, ItemName
+| order by Failures desc
 ```
 
-> [!NOTE]
-> `ItemJobEventLogs` chứa Job events từ Fabric workspace. Tham khảo: [Fabric Job events](https://learn.microsoft.com/en-us/fabric/real-time-hub/explore-fabric-job-events)
+### Warehouse top remote scans
 
+```sql
+SELECT TOP 10
+    query_hash,
+    data_scanned_remote_storage_mb,
+    data_scanned_memory_mb,
+    data_scanned_disk_mb,
+    allocated_cpu_time_ms,
+    command
+FROM queryinsights.exec_requests_history
+ORDER BY data_scanned_remote_storage_mb DESC;
+```
+
+---
+
+## 8. LAB THỰC HÀNH
+
+### Lab A — Monitoring Hub vs Capacity Metrics
+1. Chạy pipeline + notebook.
+2. Xem status trong Monitoring Hub.
+3. Mở run detail.
+4. Mở Capacity Metrics tại cùng timepoint.
+5. Giải thích: vấn đề thuộc operation hay capacity?
+
+### Lab B — Workspace Monitoring + KQL
+1. `Workspace Settings > Monitoring`.
+2. Enable log workspace activity.
+3. Mở monitoring Eventhouse.
+4. Query `ItemJobEventLogs`.
+5. Viết query failed jobs 24h.
+6. Tạo KQL Queryset.
+
+### Lab C — Alert
+1. Real-Time hub → Job events.
+2. `Set alert`.
+3. Chọn Teams/email.
+4. So sánh với built-in scheduled failure notification.
+
+### Readiness gate
+
+Không nhìn tài liệu, phải giải thích được:
+- Monitoring Hub vs Capacity Metrics vs Workspace Monitoring.
+- Spark UI vs Run Series Analysis.
+- Query Insights và `data_scanned_remote_storage_mb`.
+- Direct Lake on OneLake vs Direct Lake on SQL endpoint.
+- Built-in notification vs Activator.
+- Vì sao CU >100% chưa chắc reject ngay.
+
+---
+
+## 9. NGUỒN MICROSOFT LEARN TRỌNG YẾU
+
+- [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [Monitoring Hub](https://learn.microsoft.com/en-us/fabric/admin/monitoring-hub)
+- [Monitor pipeline runs](https://learn.microsoft.com/en-us/fabric/data-factory/monitoring-hub-pipeline-runs)
+- [Capacity Metrics app](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app)
+- [Workspace Monitoring](https://learn.microsoft.com/en-us/fabric/data-factory/workspace-monitoring)
+- [Item job event logs](https://learn.microsoft.com/en-us/fabric/fundamentals/item-job-event-logs)
+- [Job events](https://learn.microsoft.com/en-us/fabric/real-time-hub/explore-fabric-job-events)
+- [Pipeline alerts](https://learn.microsoft.com/en-us/fabric/data-factory/create-alerts-for-pipeline-runs)
+- [Query Insights](https://learn.microsoft.com/en-us/fabric/data-warehouse/query-insights)
+- [Warehouse performance guidelines](https://learn.microsoft.com/en-us/fabric/data-warehouse/guidelines-warehouse-performance)
+- [How Direct Lake works](https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-how-it-works)

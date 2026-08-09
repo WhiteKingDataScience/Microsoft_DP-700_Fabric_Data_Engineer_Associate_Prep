@@ -3,8 +3,11 @@
 ### Skills measured as of July 21, 2026
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 04/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
+
+> [!CAUTION]
+> **Không có tài liệu nào có thể bảo đảm “trúng mọi câu hỏi”.** Microsoft nêu rõ danh sách skills là minh họa và đề có thể hỏi các chủ đề liên quan. Mục tiêu của bản này là: phủ đủ blueprint hiện hành, sửa các facts đã thay đổi, và luyện cách chọn đáp án theo **scenario + constraint + least privilege/least operations**.
 
 > **Tài liệu ôn thi DP-700: Fabric Data Engineer Associate**
 > Phần này bao gồm toàn bộ kiến thức về cấu hình workspace settings trong Microsoft Fabric.
@@ -225,204 +228,95 @@ Tenant (XYZ Corporation)
 
 ## 4. CONFIGURE ONELAKE WORKSPACE SETTINGS
 
-### 4.1 OneLake là gì?
+### 4.1 Học đúng scope: Workspace setting khác Tenant setting
 
-**OneLake** là lớp lưu trữ thống nhất (unified storage layer) của Microsoft Fabric, dựa trên Azure Data Lake Storage (ADLS) Gen2.
+Đây là bẫy rất quan trọng. Khi câu hỏi nói **Workspace settings > OneLake**, hãy nghĩ đến các cấu hình lưu trữ/vận hành của OneLake ở **workspace**. Khi câu hỏi nói người dùng có được truy cập OneLake bằng ứng dụng ngoài Fabric hay không, đó là **tenant setting** trong Admin portal, không phải một công tắc riêng của workspace.
 
-**Đặc điểm chính:**
-- **Một data lake cho toàn tổ chức** (one data lake per tenant)
-- **Tự động đi kèm** với mỗi Fabric tenant, không cần provision riêng
-- **Định dạng mở:** Delta Parquet là định dạng mặc định
-- **Tích hợp với ADLS Gen2 APIs** → có thể truy cập qua Azure Storage Explorer, azcopy, v.v.
+### 4.2 Các OneLake workspace settings cần biết (cập nhật 08/2026)
 
-### 4.2 OneLake Workspace Settings
+| Nhóm setting | Ý nghĩa dễ hiểu | Điểm thi cần nhớ |
+|---|---|---|
+| **Lifecycle management** | Tự động chuyển file giữa storage tier theo tuổi hoặc mức độ truy cập | `Workspace settings > OneLake > Lifecycle management`; mỗi workspace có một policy, tối đa 10 rules |
+| **Default storage tier** | Tier mặc định của dữ liệu OneLake trong workspace | Hiện có **Hot, Cool, Cold**; chọn theo access pattern và chi phí |
+| **Diagnostics** | Ghi OneLake diagnostic logs sang Lakehouse đích | Dùng cho điều tra/troubleshooting; khác Microsoft 365/Purview audit log |
+| **Immutability policy** | Giữ diagnostic logs không bị thay đổi trong retention period | Hiện phạm vi hỗ trợ chủ yếu là **DiagnosticLogs** |
 
-**Đường dẫn:** `Workspace settings > OneLake`
+### 4.3 OneLake Lifecycle Management — hiểu bằng ví dụ
 
-| Setting | Mô tả | Lưu ý |
-|---------|--------|-------|
-| **OneLake data access** | Bật/tắt truy cập OneLake qua ADLS Gen2 APIs | Mặc định: Enabled |
-| **Allow users to access data stored in OneLake with apps external to Fabric** | Cho phép truy cập qua Azure Storage Explorer, custom apps | Controlled by tenant setting |
+Giả sử workspace có dữ liệu lịch sử ít được đọc:
 
-### 4.3 OneLake Shortcuts
+- File mới và thường xuyên truy cập → **Hot**.
+- Sau 30 ngày không sửa → có thể chuyển sang **Cool**.
+- Sau 90 ngày không sửa/truy cập → có thể chuyển sang **Cold**.
+- Rule có thể dựa trên **created time**, **last modified**, hoặc **last accessed**.
+- Policy cố gắng chạy theo chu kỳ hằng ngày; rule mới/cập nhật có thể cần đến khoảng 24 giờ mới có hiệu lực.
 
-**Shortcut** là con trỏ ảo (virtual pointer) tới dữ liệu, cho phép truy cập dữ liệu từ nhiều nguồn mà **KHÔNG sao chép dữ liệu**.
+> [!IMPORTANT]
+> Lifecycle management hiện là **tiering**, không nên học theo kiểu “rule sẽ tự xóa file” như Azure Storage lifecycle cũ. Khi đề hỏi giảm chi phí lưu trữ dữ liệu ít truy cập nhưng vẫn giữ dữ liệu, hãy nghĩ đến **Cool/Cold tier**.
 
-#### Các loại Shortcuts:
+### 4.4 Tenant settings liên quan OneLake — đừng nhầm với workspace settings
 
-| Loại | Nguồn | Mô tả |
-|------|-------|--------|
-| **Internal** | OneLake (cùng/khác workspace) | Trỏ tới folder/table trong Lakehouse/Warehouse khác |
-| **ADLS Gen2** | Azure Data Lake Storage Gen2 | Trỏ tới container/folder trong ADLS Gen2 |
-| **Amazon S3** | AWS S3 | Trỏ tới S3 bucket/prefix |
-| **Google Cloud Storage** | GCS | Trỏ tới GCS bucket |
-| **Dataverse** | Microsoft Dataverse | Trỏ tới Dataverse tables |
-| **S3 Compatible** | MinIO, Cloudflare R2, v.v. | Trỏ tới S3-compatible storage |
+Các setting như **Users can access data stored in OneLake with apps external to Fabric** được cấu hình ở **Admin portal > Tenant settings > OneLake**. Chúng kiểm soát khả năng dùng ADLS APIs/custom apps/OneLake File Explorer từ ngoài Fabric.
 
-### 4.4 Shortcut Security
+Ngoài ra, OneLake tenant settings hiện còn có các tùy chọn về **OneLake File Explorer**, **user-delegated SAS tokens** và việc ghi end-user identifiers vào diagnostic logs. Không học thuộc từng toggle; hãy nhớ **scope**: tenant policy quyết định khả năng chung của tổ chức, workspace policy quyết định cách workspace đó lưu trữ/ghi diagnostics/tiering.
 
-| Chế độ | Mô tả |
-|--------|--------|
-| **Passthrough Authentication** (Mặc định) | Identity của user truy cập được "pass through" tới target → user phải có quyền trên target |
-| **Delegated Shortcuts** (Mới - 2026) | Sử dụng fixed credentials cho data distribution scenarios |
+### 4.5 OneLake Shortcuts — kiến thức liên quan, nhưng không phải trọng tâm của skill “workspace settings”
 
-> 💡 **Mẹo thi:** Security được set trên target folder sẽ tự động được áp dụng xuyên qua internal shortcuts. Đây là cơ chế **security propagation**.
+**Shortcut** là con trỏ tới dữ liệu ở nơi khác để tránh sao chép. Đây là kiến thức quan trọng của DP-700 nhưng chủ yếu xuất hiện trong phần ingest/manage data. Với Domain 1, chỉ cần nối nó với hai quyết định:
 
-### 4.5 OneLake Data Access Roles (Workspace Level)
+1. **Need zero-copy / minimize data movement** → cân nhắc Shortcut.
+2. **Need to change workspace storage lifecycle/diagnostics/default tier** → đây mới là OneLake workspace settings.
 
-Cấu hình quyền truy cập dữ liệu OneLake ở cấp workspace:
-
-- **AllowAll:** Tất cả users có workspace access đều đọc được tất cả OneLake data
-- **RestrictAccess:** Chỉ users được gán explicit OneLake security roles mới đọc được data
-
-### 4.6 OneLake File Explorer
-
-- Ứng dụng Windows cho phép mount OneLake vào File Explorer
-- Đồng bộ files giữa local machine và OneLake
-- Hỗ trợ drag-and-drop files vào Lakehouse
-
-### 4.7 Ví dụ minh họa thực tế
-
-**Tình huống:** Team Analytics cần truy cập dữ liệu từ:
-1. Lakehouse trong workspace khác (Finance)
-2. Azure Data Lake Storage Gen2 (historical data)
-3. Amazon S3 (partner data)
-
-**Giải pháp:**
-```
-Lakehouse: Analytics-Lakehouse
-├── Tables/
-│   ├── dim_customer          (Delta table, native)
-│   ├── dim_product           (Delta table, native)
-│   └── fact_sales            (Delta table, native)
-├── Files/
-│   └── raw_data/
-└── Shortcuts/
-    ├── finance_data/         → Internal shortcut → Finance-Lakehouse/Tables/
-    ├── historical_archive/   → ADLS Gen2 shortcut → storageaccount/archive/
-    └── partner_feeds/        → S3 shortcut → s3://partner-bucket/feeds/
-```
-
----
+> 💡 **Mẹo thi:** Nếu đáp án nói “enable external app access trong Workspace settings > OneLake”, hãy cảnh giác. External-app access là tenant setting; lifecycle/diagnostics/default tier mới là các cấu hình workspace OneLake hiện hành.
 
 ## 5. CONFIGURE APACHE AIRFLOW WORKSPACE SETTINGS
 
-### 5.1 Apache Airflow trong Fabric là gì?
+### 5.1 Apache Airflow Job trong Fabric là gì?
 
-Apache Airflow trong Fabric là dịch vụ **managed orchestration** cho phép tạo, lập lịch và giám sát workflows (DAGs - Directed Acyclic Graphs) mà không cần quản lý infrastructure.
+Fabric cung cấp **Apache Airflow Job** để chạy DAG (Directed Acyclic Graph) mà không phải tự dựng Airflow infrastructure. Blueprint DP-700 hiện yêu cầu biết **configure Apache Airflow workspace settings**.
 
-### 5.2 Workspace Settings cho Airflow
+**Đường dẫn chính:** `Workspace settings > Data Factory > Apache Airflow Runtime Settings`
 
-**Đường dẫn:** `Workspace settings > Data Factory > Apache Airflow Runtime Settings`
+### 5.2 Hai loại pool phải phân biệt
 
-### 5.3 Pool Options
+| Tiêu chí | Starter pool | Custom pool |
+|---|---|---|
+| Mục tiêu | Dev/test, workload chạy không thường xuyên | Production, scheduler cần sẵn sàng liên tục |
+| Startup | Nhanh khi runtime sẵn | Pool giữ trạng thái chạy |
+| Idle behavior | Tự deprovision sau khoảng 20 phút không hoạt động | **Always-on** đến khi pause thủ công |
+| Tùy chỉnh | Ít | Node size, extra nodes, autoscale |
+| Chi phí | Tốt cho workload gián đoạn | Trả CU trong thời gian pool chạy |
 
-#### Starter Pool (Mặc định)
-| Thuộc tính | Giá trị |
-|-----------|---------|
-| **Availability** | Instantaneous runtime |
-| **Auto-deprovisioning** | Sau 20 phút không hoạt động |
-| **Use case** | Development và testing |
-| **Cost** | Pay-per-use, tiết kiệm khi không sử dụng |
-| **Customization** | Không thể tùy chỉnh node size |
+**Cách suy luận:**
+- “Runs occasionally / minimize idle cost” → **Starter pool**.
+- “Production / scheduler 24x7 / predictable readiness” → **Custom pool**.
+- Custom pool không có nghĩa lúc nào cũng phải chọn node lớn; chọn node/extra nodes/autoscale theo concurrency và capacity.
 
-#### Custom Pool
-| Thuộc tính | Giá trị |
-|-----------|---------|
-| **Availability** | Always-on cho đến khi manually paused |
-| **Configuration** | Tùy chỉnh node size, extra nodes, autoscaling |
-| **Use case** | Production workloads, long-running DAGs |
-| **Cost** | Cao hơn (luôn chạy) |
+### 5.3 Setting “customize compute configurations for items”
 
-### 5.4 Authentication - Workspace Identity
+Nếu workspace admin **không cho phép item tự tùy biến compute**, các Airflow environments dùng Starter pool/default configuration của workspace. Nếu cho phép, item có thể dùng custom compute phù hợp hơn.
 
-- **Workspace Identity** là managed identity cho phép Airflow DAGs authenticate tới Fabric services
-- **Không cần** quản lý connection strings hoặc Service Principal thủ công
-- **Cấu hình:** `Settings > Manage connections and gateways`
+### 5.4 Network limitation cần biết
 
-**Các services hỗ trợ Workspace Identity:**
-- Lakehouse
-- Notebooks  
-- Pipelines
-- Warehouse
-- KQL Database
+Tính đến 09/08/2026, Microsoft vẫn ghi rõ **private networks và virtual networks chưa được hỗ trợ cho Fabric Apache Airflow jobs**. Nếu scenario bắt buộc private/VNet connectivity, không được giả định Fabric Airflow hiện đáp ứng trực tiếp yêu cầu đó.
 
-### 5.5 Variable Libraries
+### 5.5 Đừng trộn các khái niệm
 
-- Cho phép định nghĩa **nhiều bộ giá trị** (value sets) cho các biến
-- Đánh dấu một bộ là **active** cho mỗi workspace
-- **Lợi ích:** Thay đổi cấu hình giữa các môi trường (DEV/TEST/PROD) mà KHÔNG cần sửa DAG code
+- **Airflow Variable** (`airflow.models.Variable`) là biến của Airflow.
+- **Fabric Variable library** là Fabric item dùng chia sẻ configuration/value sets giữa pipelines, notebooks, shortcuts và CI/CD.
+- **Workspace identity** là identity phục vụ authentication ở các tính năng hỗ trợ; nó **không phải** là “Airflow pool setting”.
 
-```python
-# Ví dụ sử dụng Variable trong DAG
-from airflow.models import Variable
+### 5.6 Mini scenario
 
-# Giá trị này thay đổi tùy environment (DEV/PROD) nhờ Variable Libraries
-storage_path = Variable.get("data_storage_path")
-database_name = Variable.get("target_database")
-```
+**Yêu cầu:** DAG chạy mỗi 4 giờ nhưng đội vận hành yêu cầu scheduler luôn sẵn sàng, không chờ resume runtime.
 
-### 5.6 DAG Authoring
-
-- DAGs được viết bằng Python
-- Lưu trữ trong thư mục `dags/` của Airflow item
-- Hỗ trợ custom Python packages qua `requirements.txt`
-
-### 5.7 Giới hạn hiện tại (Tính đến mid-2026)
-
-> ⚠️ **Lưu ý:** Apache Airflow jobs trong Fabric hiện **KHÔNG hỗ trợ private networks hoặc virtual networks**. Feature này đang được phát triển.
-
-### 5.8 Ví dụ minh họa thực tế
-
-**Tình huống:** Team Data Engineering cần orchestrate pipeline ETL hàng ngày.
-
-**DAG ví dụ:**
-```python
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from datetime import datetime, timedelta
-
-default_args = {
-    'owner': 'data-engineering',
-    'depends_on_past': False,
-    'start_date': datetime(2026, 1, 1),
-    'retries': 3,
-    'retry_delay': timedelta(minutes=5),
-}
-
-with DAG(
-    'daily_etl_pipeline',
-    default_args=default_args,
-    schedule_interval='0 6 * * *',  # Chạy lúc 6 AM hàng ngày
-    catchup=False,
-) as dag:
-    
-    def extract_data():
-        # Logic extract từ source
-        pass
-    
-    def transform_data():
-        # Logic transform
-        pass
-    
-    def load_data():
-        # Logic load vào Lakehouse
-        pass
-    
-    extract = PythonOperator(task_id='extract', python_callable=extract_data)
-    transform = PythonOperator(task_id='transform', python_callable=transform_data)
-    load = PythonOperator(task_id='load', python_callable=load_data)
-    
-    extract >> transform >> load
-```
-
----
+→ Chọn **Custom pool**. Nếu yêu cầu ngược lại là workload chỉ chạy 1–2 lần/ngày và ưu tiên tiết kiệm idle cost, Starter pool có thể phù hợp hơn.
 
 ## 6. CÂU HỎI MÔ PHỎNG BÀI THI
 
 ### Question 1
 
-**You are configuring a Microsoft Fabric workspace for a data engineering team. The team needs Spark sessions to start within 5 seconds for interactive development. What should you configure?**
+**Bạn cần cấu hình Fabric Spark cho interactive development và muốn thời gian khởi tạo session nhanh nhất trong các lựa chọn chuẩn, không yêu cầu SLA cố định. Nên chọn gì?**
 
 A. Create a Custom Spark Pool with Small nodes  
 B. Enable the Starter Pool as the default pool  
@@ -435,9 +329,9 @@ D. Create a new Environment with pre-loaded libraries
 **Đáp án: B**
 
 **Giải thích:**
-- **Starter Pool** được thiết kế để cung cấp **khởi tạo session nhanh (~5 giây)** vì nó sử dụng pre-warmed resources
+- **Starter Pool** dùng prehydrated/pre-warmed capacity và Microsoft mô tả thời gian khởi tạo thường khoảng **5–10 giây** trong common scenarios; đây không phải SLA cố định
 - **Custom Spark Pool** (A, C) có thời gian khởi tạo lâu hơn vì cần provision resources
-- **Environment** (D) là nơi quản lý libraries, không ảnh hưởng đến tốc độ khởi tạo session
+- **Environment** (D) quản lý runtime/libraries/compute configuration; bản thân việc tạo Environment không phải đáp án trực tiếp cho yêu cầu startup nhanh nhất
 - Starter Pool là lựa chọn tối ưu cho **development và testing** khi tốc độ khởi tạo là ưu tiên
 
 </details>
@@ -545,166 +439,124 @@ D. They can modify the domain settings including description and image
 
 ### Question 6
 
-**You are setting up a development environment for a data engineering team. Multiple data engineers need to work on separate notebooks simultaneously within the same workspace. They want to share the same Spark session to reduce startup times. What feature should you enable?**
+**Hai notebook do hai người dùng khác nhau chạy trong cùng workspace. Họ muốn dùng High Concurrency để chia sẻ cùng một Spark session. Điều nào đúng?**
 
-A. Workspace Identity  
-B. Spark Autoscale  
-C. High Concurrency Mode  
-D. Dynamic Allocation  
+A. Có, chỉ cần cùng workspace  
+B. Có, nếu cùng default lakehouse  
+C. Không; High Concurrency session sharing được giới hạn theo cùng một user  
+D. Chỉ cần cả hai là Contributor
 
-<details>
-<summary>✅ Đáp án và giải thích</summary>
+<details><summary>✅ Đáp án</summary>
 
-**Đáp án: C**
-
-**Giải thích:**
-- **High Concurrency Mode** cho phép nhiều notebooks chia sẻ cùng một Spark session → giảm thời gian khởi động
-- **Workspace Identity** (A) là managed identity cho authentication, không liên quan đến session sharing
-- **Autoscale** (B) tự động điều chỉnh số lượng nodes, không phải session sharing
-- **Dynamic Allocation** (D) tự động điều chỉnh executors, không phải session sharing
-- High Concurrency đặc biệt hữu ích cho development environment khi nhiều engineers cần interactive notebooks
-
+**C.** High Concurrency giúp nhiều notebook tương thích **của cùng một user** chia sẻ session; không nên suy luận thành cross-user session sharing.
 </details>
 
 ---
 
 ### Question 7
 
-**You need to ensure that users can access OneLake data from Azure Storage Explorer. Which workspace setting must be enabled?**
+**Một tổ chức muốn cho phép người dùng truy cập OneLake bằng Azure Storage Explorer. Setting nào cần kiểm tra trước?**
 
-A. OneLake data access  
-B. Allow users to access data stored in OneLake with apps external to Fabric  
-C. Workspace Identity  
-D. ADLS Gen2 compatibility mode  
+A. Workspace > OneLake > Lifecycle management  
+B. Tenant setting **Users can access data stored in OneLake with apps external to Fabric**  
+C. Spark session timeout  
+D. Domain certification setting
 
-<details>
-<summary>✅ Đáp án và giải thích</summary>
+<details><summary>✅ Đáp án</summary>
 
-**Đáp án: B**
-
-**Giải thích:**
-- Setting "**Allow users to access data stored in OneLake with apps external to Fabric**" phải được enabled để cho phép truy cập qua Azure Storage Explorer, custom apps, và các công cụ external khác
-- **OneLake data access** (A) bật/tắt ADLS Gen2 API access nhưng không đủ - cần setting cụ thể cho external apps
-- **Workspace Identity** (C) là managed identity, không liên quan
-- **ADLS Gen2 compatibility mode** (D) không phải là setting thực trong Fabric
-- Lưu ý: Setting này cũng có thể được controlled ở **tenant level** bởi Fabric Admin
-
+**B.** Đây là **tenant setting**. Lifecycle management là workspace setting phục vụ storage tiering, không phải external-app authorization.
 </details>
 
 ---
 
 ### Question 8
 
-**You are configuring Spark settings for a workspace. You need to ensure that all notebooks in the workspace use a specific set of Python libraries by default. What should you do?**
+**Workspace chứa file lịch sử phải giữ lại nhiều năm. File ít được truy cập sau 90 ngày và mục tiêu là giảm storage cost mà không xóa dữ liệu. Nên cấu hình gì?**
 
-A. Install libraries using %pip install in each notebook  
-B. Create an Environment item with the required libraries and set it as the workspace default  
-C. Add the libraries to the Starter Pool configuration  
-D. Configure the libraries in the Spark Properties section  
+A. OneLake lifecycle rule chuyển file sang Cold tier  
+B. OneLake shortcut  
+C. Domain Contributor  
+D. Spark High Concurrency
 
-<details>
-<summary>✅ Đáp án và giải thích</summary>
+<details><summary>✅ Đáp án</summary>
 
-**Đáp án: B**
-
-**Giải thích:**
-- **Environment item** cho phép cài đặt libraries (public từ PyPI/Conda hoặc custom .whl/.jar) và khi set làm **workspace default**, TẤT CẢ notebooks sẽ sử dụng libraries đó
-- `%pip install` (A) chỉ cài đặt cho **session hiện tại** của một notebook, không persistent
-- **Starter Pool** (C) không cho phép tùy chỉnh library configuration
-- **Spark Properties** (D) dùng để cấu hình Spark runtime parameters, không phải library management
-- Workflow đúng: Tạo Environment → Cài libraries → Set workspace default → Publish
-
+**A.** OneLake lifecycle management tự động tier dữ liệu theo created/modified/accessed time. Đây là đúng scope “OneLake workspace settings”.
 </details>
 
 ---
 
 ### Question 9
 
-**Your organization uses Microsoft Fabric. A tenant admin wants to allow domain admins to set default sensitivity labels for items within their own domains, rather than applying a single policy tenant-wide. What should the tenant admin do?**
+**Spark jobs trong workspace thường bị cạnh tranh capacity. Admin muốn Fabric cho phép job bắt đầu dựa trên minimum core requirement và scale dần khi capacity còn tài nguyên. Setting/behavior nào phù hợp?**
 
-A. Create a separate capacity for each domain  
-B. Delegate the sensitivity label tenant setting to the domain level  
-C. Assign the Fabric Admin role to each domain admin  
-D. Configure Microsoft Purview at the workspace level  
+A. Optimistic Job Admission  
+B. OneLake immutability  
+C. Deployment rule  
+D. Domain default label
 
-<details>
-<summary>✅ Đáp án và giải thích</summary>
+<details><summary>✅ Đáp án</summary>
 
-**Đáp án: B**
-
-**Giải thích:**
-- Fabric cho phép **delegation** của một số tenant-level settings xuống domain level, bao gồm default sensitivity labels
-- **Separate capacities** (A) liên quan đến compute isolation, không phải governance delegation
-- **Fabric Admin role** (C) quá nhiều quyền, vi phạm principle of least privilege
-- **Microsoft Purview at workspace level** (D) không phải cách cấu hình đúng trong Fabric
-- Delegation cho phép domain admins tùy chỉnh policies cho business unit của họ mà vẫn tuân thủ framework chung
-
+**A.** Fabric Spark workspaces mặc định bật **Optimistic Job Admission**. Admin có thể chọn reserve maximum cores nếu cần cách admission bảo thủ hơn.
 </details>
 
 ---
 
 ### Question 10
 
-**You are using OneLake shortcuts to access data from an ADLS Gen2 storage account. A user reports that they can see the shortcut in the Lakehouse but cannot read the data. What is the MOST likely cause?**
+**Production Airflow scheduler phải luôn sẵn sàng 24x7. Lựa chọn nào phù hợp nhất?**
 
-A. The shortcut is configured with the wrong file format  
-B. The user does not have the required permissions on the target ADLS Gen2 storage account (passthrough authentication)  
-C. The OneLake data access setting is disabled for the workspace  
-D. The user needs to be added as a Domain Contributor  
+A. Starter pool  
+B. Custom pool  
+C. Spark starter pool  
+D. OneLake default tier
 
-<details>
-<summary>✅ Đáp án và giải thích</summary>
+<details><summary>✅ Đáp án</summary>
 
-**Đáp án: B**
-
-**Giải thích:**
-- Với **Passthrough Authentication** (mặc định cho hầu hết shortcuts), identity của user được "pass through" tới target. User **phải có quyền trên target ADLS Gen2** để đọc dữ liệu
-- **File format** (A) không ảnh hưởng đến khả năng truy cập
-- **OneLake data access** (C) ảnh hưởng đến external API access, user vẫn thấy shortcut trong Lakehouse
-- **Domain Contributor** (D) liên quan đến domain assignment, không phải data access
-- Đây là vấn đề phổ biến: user có workspace access nhưng thiếu permissions trên nguồn external → cần GRANT quyền trên ADLS Gen2
-
+**B.** Custom Airflow pool là always-on đến khi pause thủ công; Starter pool deprovision sau thời gian idle.
 </details>
 
 ---
 
 ## 📝 TÓM TẮT KIẾN THỨC CẦN NHỚ
 
-| Chủ đề | Điểm then chốt |
-|--------|----------------|
-| **Spark Pools** | Starter (~5s start) vs Custom (configurable, production) |
-| **Spark Runtime** | Runtime GA cho tương thích; Runtime 2.0 = Spark 4.1/Delta 4.2 Preview (07/2026) |
-| **Environment** | Quản lý libraries, set workspace default |
-| **Domain** | Organizational layer, NOT access control |
-| **Domain Roles** | Admin > Domain Admin > Domain Contributor |
-| **OneLake** | Unified storage, Delta Parquet format |
-| **Shortcuts** | Virtual pointers, zero-copy, multi-cloud |
-| **Shortcut Auth** | Passthrough (default) vs Delegated |
-| **Airflow Pools** | Starter (20min timeout) vs Custom (always-on) |
-| **Airflow Identity** | Workspace Identity cho managed authentication |
-| **Variable Libraries** | Multiple value sets cho multi-environment config |
+| Chủ đề | Phản xạ khi làm bài |
+|---|---|
+| **Spark Starter vs Custom** | Starter = fast/common workloads; Custom = kiểm soát node/autoscale/dynamic allocation |
+| **Spark Environment** | Runtime + libraries + compute settings; có thể đặt workspace default |
+| **Spark Jobs settings** | Optimistic Job Admission, reserve maximum cores, session timeout |
+| **Domain** | Logical governance/data mesh; **không tự cấp data access** |
+| **Delegated domain settings** | Có thể gồm default sensitivity label và certification; feature/state có thể Preview |
+| **OneLake workspace settings** | Lifecycle management, default tier, diagnostics, immutability |
+| **OneLake tenant settings** | External apps, File Explorer, SAS, diagnostic identifiers — đừng nhầm scope |
+| **Airflow Starter vs Custom** | Starter = intermittent/dev; Custom = always-on/production |
+| **Preview vs GA** | Không chọn feature chỉ vì mới; ưu tiên đúng requirement và compatibility |
 
----
-
-> 📖 **Tài liệu tham khảo chính thức:**
-> - [Microsoft Fabric Documentation](https://learn.microsoft.com/en-us/fabric/)
-> - [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
-> - [OneLake Documentation](https://learn.microsoft.com/en-us/fabric/onelake/)
-> - [Apache Spark in Fabric](https://learn.microsoft.com/en-us/fabric/data-engineering/)
-
+> **Điểm cá nhân cần khóa:** “Configure Fabric workspace settings” nằm trong Top 3 weakness của score report của bạn. Hãy luyện câu hỏi theo **scope**: Tenant → Domain → Capacity → Workspace → Item → Data, vì rất nhiều đáp án nhiễu chỉ khác nhau ở cấp cấu hình.
 
 ---
 
 ## 7. BỔ SUNG ÔN THI 2026: SPARK SETTINGS VÀ QUYẾT ĐỊNH KIẾN TRÚC
 
-### 7.1 Những bẫy dễ gặp
+### 7.1 Spark Runtime hiện hành
+
+- **Runtime 1.3 (GA):** Spark 3.5.5, Python 3.11, Delta Lake 3.2; Microsoft hiện khuyến nghị dùng GA runtime cho production khi cần độ ổn định/tương thích.
+- **Runtime 2.0 (Public Preview):** Spark 4.1, Python 3.13, Delta Lake 4.2. Tính năng Preview có thể xuất hiện trong đề nếu phổ biến, nhưng production decision phải kiểm tra interoperability.
+
+### 7.2 Jobs settings — phần dễ bị bỏ sót
+
+Workspace Admin có thể cấu hình **Optimistic Job Admission**, **Reserve maximum cores for active Spark jobs**, và **Spark session timeout**. Session expiry mặc định cho interactive session là khoảng 20 phút.
+
+- Optimistic Job Admission: job bắt đầu theo **minimum core requirement**, rồi autoscale nếu capacity cho phép.
+- Reserve maximum cores: phù hợp khi muốn admission dựa trên peak/max resource reservation, đổi lại concurrency có thể thấp hơn.
+
+### 7.3 Những bẫy dễ gặp
 
 - Starter pool nhanh nhờ pre-warmed capacity nhưng không bảo đảm mọi session đều khởi động trong đúng 5 giây.
 - High concurrency không có nghĩa nhiều người dùng chia sẻ một session; session sharing bị giới hạn theo user và các notebook phải tương thích.
 - Runtime mới nhất không tự động là lựa chọn tốt nhất. Runtime 2.0 vẫn Preview và Delta 4.x features có thể không interoperable với mọi Fabric workload.
 - Chọn pool dựa trên SLA khởi động, concurrency, libraries, runtime và resource profile; không chọn chỉ dựa trên “2 TB/ngày”.
 
-### 7.2 Lab nhanh
+### 7.4 Lab nhanh
 
 ```python
 # Kiểm tra cấu hình session đang chạy
@@ -717,7 +569,7 @@ for key in keys:
     print(key, spark.conf.get(key, "<not set>"))
 ```
 
-### 7.3 Câu hỏi tình huống bổ sung
+### 7.5 Câu hỏi tình huống bổ sung
 
 **Một pipeline chạy ba notebook liên tiếp. Các notebook cùng workspace, cùng default lakehouse và libraries. Mục tiêu là giảm thời gian tạo session nhưng vẫn tách log theo notebook. Chọn giải pháp nào?**
 
@@ -736,11 +588,16 @@ D. Tăng `spark.sql.shuffle.partitions`
 
 ## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
 
-- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
-- [Spark starter pools](https://learn.microsoft.com/en-us/fabric/data-engineering/configure-starter-pools)
-- [Runtime 2.0](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0)
-- [High concurrency notebooks](https://learn.microsoft.com/en-us/fabric/data-engineering/configure-high-concurrency-session-notebooks)
-- [Airflow workspace settings](https://learn.microsoft.com/en-us/fabric/data-factory/apache-airflow-jobs-workspace-settings)
+- [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [Spark workspace administration settings](https://learn.microsoft.com/en-us/fabric/data-engineering/workspace-admin-settings)
+- [Spark job admission](https://learn.microsoft.com/en-us/fabric/data-engineering/job-admission-management)
+- [Fabric domains](https://learn.microsoft.com/en-us/fabric/governance/domains)
+- [Domain-level default sensitivity labels](https://learn.microsoft.com/en-us/fabric/governance/domain-default-sensitivity-label)
+- [OneLake lifecycle management](https://learn.microsoft.com/en-us/fabric/onelake/onelake-lifecycle-management)
+- [OneLake tenant settings](https://learn.microsoft.com/en-us/fabric/admin/service-admin-portal-onelake)
+- [OneLake Settings REST API](https://learn.microsoft.com/en-us/rest/api/fabric/core/onelake-settings)
+- [Apache Airflow Job workspace settings](https://learn.microsoft.com/en-us/fabric/data-factory/apache-airflow-jobs-workspace-settings)
+- [Apache Airflow compute](https://learn.microsoft.com/en-us/fabric/data-factory/apache-airflow-compute)
 
 ---
 
@@ -799,104 +656,19 @@ D. Chuyển table sang CSV để tránh vấn đề
 
 ---
 
-## 9. KẾ HOẠCH 14 NGÀY VÀ ĐÁNH GIÁ SẴN SÀNG
+## 9. READINESS CHECK — WORKSPACE SETTINGS
 
-> Phần này tổng hợp từ **DP-700 Readiness Assessment** (đánh giá ngày 04/08/2026, blueprint 21/07/2026).
+Bạn chưa nên coi phần này là “nắm chắc” nếu chưa tự trả lời được, không nhìn tài liệu:
 
-### 9.1 Đánh Giá Mức Sẵn Sàng
+1. Khi nào dùng Starter pool, Custom Spark pool, Custom Airflow pool?
+2. Environment khác Spark pool và runtime như thế nào?
+3. Optimistic Job Admission giải quyết vấn đề gì?
+4. Domain có cấp quyền truy cập dữ liệu không?
+5. Default sensitivity label ở domain khác sensitivity label/protection policy ra sao?
+6. OneLake **workspace settings** khác OneLake **tenant settings** ở đâu?
+7. Lifecycle management dùng Hot/Cool/Cold như thế nào?
+8. Diagnostics/immutability khác Microsoft Purview audit log ra sao?
+9. High Concurrency có chia sẻ session giữa hai user khác nhau không?
+10. Khi feature còn Preview, tiêu chí nào quyết định có nên dùng production?
 
-| Tiêu chí | Sau cập nhật | Nhận xét |
-|---|---:|---|
-| Khớp blueprint | 98/100 | Đủ toàn bộ nhóm kỹ năng chính |
-| Tính chính xác/currentness | 92/100 | Đã sửa facts thay đổi nhanh và overclaim |
-| SQL/PySpark/KQL | 90/100 | Code hợp lệ và decision context |
-| Hands-on readiness | 86/100 | Cần tự chạy lab trong tenant Fabric |
-| Câu hỏi scenario | 90/100 | Trade-off, least privilege, troubleshooting |
-| Exam strategy | 91/100 | Checklist và kế hoạch 14 ngày |
-
-> [!IMPORTANT]
-> Đạt ≥80% ổn định trên ba lần liên tiếp mock exam + làm được lab thực tế → khoảng **88–92/100 mức sẵn sàng**. Điểm thi là **scaled score**, cần **700 trở lên** để đạt.
-
-### 9.2 Kế Hoạch 14 Ngày
-
-#### Ngày 1–2: Domain 1 — Workspace, CI/CD, Security
-
-- Tạo workspace Dev/Test, xem Spark settings, Environment, starter/custom pool.
-- Kết nối workspace test với [Git](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/intro-to-git-integration) và thực hiện commit/update/conflict.
-- Tạo deployment pipeline; phân biệt paired/unpaired items.
-- Tạo Viewer/item access và OneLake role; kiểm tra khác biệt với Contributor.
-
-#### Ngày 3–5: Domain 2 — Batch và Loading
-
-- Full load bằng `CREATE OR REPLACE` hoặc overwrite.
-- Incremental load với control watermark và `MERGE`.
-- SCD Type 1/2, dedup, missing/late-arriving dimension.
-- So sánh Lakehouse, Warehouse, Eventhouse, SQL Database bằng 10 scenarios.
-
-#### Ngày 6–7: Domain 2 — Streaming
-
-- Eventstream → Eventhouse/Lakehouse.
-- KQL `where`, `project`, `summarize`, `bin`, `join`, materialized view/update policy.
-- Spark Structured Streaming với checkpoint, watermark, window, output mode.
-- Standard shortcut vs query acceleration vs native table.
-
-#### Ngày 8–9: Domain 3 — Monitor và Troubleshoot
-
-- [Monitoring Hub](https://learn.microsoft.com/en-us/fabric/admin/monitoring-hub): pipeline, notebook, Dataflow run.
-- [Capacity Metrics app](https://learn.microsoft.com/en-us/fabric/enterprise/metrics-app): identify overload, top operations, smoothing/throttling.
-- Activator alert trên Job events hoặc KQL query.
-- Thực hành 5 lỗi: credential, schema drift, gateway, OOM/skew, shortcut permission.
-
-#### Ngày 10–11: Optimization
-
-- Tạo small files, chạy `OPTIMIZE`/V-Order/`VACUUM` trên dữ liệu lab.
-- So sánh partitioning, Z-Order và liquid clustering bằng physical plan/file count.
-- Tune Copy activity bằng partitioning/parallelism/throughput option.
-- KQL filter early, hot cache; Spark broadcast/AQE/skew.
-
-#### Ngày 12–13: Mock Exam
-
-- Làm 2 lượt 50 câu scenario, giới hạn thời gian 90–100 phút.
-- Ghi error log theo blueprint bullet, không chỉ theo tên file.
-- Mọi câu sai phải viết lại: requirement → rejected options → correct trade-off.
-
-#### Ngày 14: Final Review
-
-- Đọc lại bảng "bẫy thi" và các decision matrix trong từng file domain.
-- Làm [Microsoft Practice Assessment](https://learn.microsoft.com/en-us/credentials/certifications/fabric-data-engineer-associate/practice/assessment) và Exam Sandbox.
-- Chỉ đặt lịch khi đạt ≥80% ổn định và giải thích được vì sao ba đáp án còn lại sai.
-
-### 9.3 Mẹo Làm Bài Trong Phòng Thi
-
-- Đọc **câu cuối câu hỏi trước** để biết họ hỏi **BEST**, **MINIMUM**, **FIRST** hay **MOST likely**.
-- Gạch nhanh yêu cầu quan trọng: latency, no-copy, least privilege, low-code/pro-code, environment promotion, retry/transient, cost, compatibility.
-- Không chọn công cụ vì "mới nhất"; chọn vì nó đáp ứng ràng buộc với ít vận hành/rủi ro nhất.
-- Với security → xác định workspace role **trước** rồi mới suy luận RLS/CLS/item permissions.
-- Với data movement → phân biệt **copy**, **transform**, **orchestrate**.
-- Với monitoring → phân biệt **operation status** (Monitoring Hub) và **capacity resource health** (Capacity Metrics).
-- Với errors → retry chỉ cho **transient**; credential/schema/permission phải sửa nguyên nhân gốc.
-- Đánh dấu câu dài để quay lại, không tiêu quá 2–3 phút ở lượt đầu.
-
-### 9.4 Ngưỡng "Đủ Để Thi"
-
-> [!WARNING]
-> Nên hoãn thi nếu vẫn chưa làm được **độc lập** các việc sau:
-
-- Viết PySpark `MERGE`, dedup và Structured Streaming checkpoint/watermark.
-- Viết KQL filter/project/summarize/bin/join và giải thích native vs shortcut vs acceleration.
-- Chọn Dataflow Gen2/Pipeline/Notebook theo scenario cụ thể.
-- Giải thích Git integration vs deployment pipeline và permission model.
-- Giải thích OneLake security precedence và bypass pattern.
-- Chẩn đoán pipeline/notebook/capacity từ đúng monitoring surface.
-- Chọn OPTIMIZE/VACUUM/V-Order/Z-Order/liquid clustering đúng mục đích.
-
-### 9.5 Nguồn Học Chính Thức
-
-| Tài nguyên | Link |
-|-----------|------|
-| DP-700 Study Guide | [learn.microsoft.com](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) |
-| Fabric Data Engineer Associate | [Certification page](https://learn.microsoft.com/en-us/credentials/certifications/fabric-data-engineer-associate/) |
-| Khóa học DP-700T00 | [Training course](https://learn.microsoft.com/en-us/training/courses/dp-700t00) |
-| Practice Assessment | [Free practice test](https://learn.microsoft.com/en-us/credentials/certifications/fabric-data-engineer-associate/practice/assessment) |
-| Exam Sandbox | [aka.ms/examdemo](https://aka.ms/examdemo) |
-
+**Ngưỡng khuyến nghị:** làm đúng ≥ 85% câu scenario mới, và tự cấu hình/lab được ít nhất Spark settings + OneLake lifecycle + Airflow pool decision trong tenant test.

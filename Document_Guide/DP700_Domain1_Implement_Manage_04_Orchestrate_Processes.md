@@ -3,8 +3,11 @@
 ### Skills measured as of July 21, 2026
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 04/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
+
+> [!CAUTION]
+> **Không có tài liệu nào có thể bảo đảm “trúng mọi câu hỏi”.** Microsoft nêu rõ danh sách skills là minh họa và đề có thể hỏi các chủ đề liên quan. Mục tiêu của bản này là: phủ đủ blueprint hiện hành, sửa các facts đã thay đổi, và luyện cách chọn đáp án theo **scenario + constraint + least privilege/least operations**.
 
 > **Tài liệu ôn thi DP-700: Fabric Data Engineer Associate**
 > Phần này bao gồm toàn bộ kiến thức về điều phối quy trình (orchestration) trong Microsoft Fabric.
@@ -159,121 +162,53 @@ Cần orchestrate nhiều steps?
 
 ## 3. DESIGN AND IMPLEMENT SCHEDULES AND EVENT-BASED TRIGGERS
 
-### 3.1 Các loại Triggers trong Fabric
+### 3.1 Ba cách chính để chạy Pipeline
 
-| Loại | Mô tả | Áp dụng cho |
-|------|--------|-------------|
-| **Schedule Trigger** | Chạy theo lịch trình cố định | Pipeline, Dataflow Gen2, Notebook |
-| **Tumbling Window Trigger** | Chạy theo time windows không chồng lấp | Pipeline |
-| **Event-Based Trigger** | Chạy khi có sự kiện (file tạo/xóa) | Pipeline |
-| **On-demand** | Chạy thủ công | Tất cả |
+Fabric Data Factory hiện mô tả ba nhóm run:
+1. **On-demand** — chạy thủ công/ngay lập tức.
+2. **Scheduled** — chạy theo lịch.
+3. **Event-based** — chạy khi event phù hợp xảy ra.
 
-### 3.2 Schedule Trigger
+### 3.2 Fixed schedule
 
-**Cấu hình Schedule:**
+Khi tạo schedule, bạn chọn frequency, start/end date-time và time zone. **Fabric hiện yêu cầu cả start date và end date**; nếu muốn lịch dài hạn, đặt end date xa trong tương lai.
 
-```
-Schedule Configuration:
-├── Frequency: Daily / Weekly / Monthly / Custom
-├── Time: 06:00 AM UTC
-├── Start date: 2026-01-01
-├── End date: 2026-12-31 (hoặc No end)
-├── Timezone: (UTC+07:00) Bangkok, Hanoi, Jakarta
-└── Advanced:
-    ├── Recurrence: Every 1 Day
-    └── At these hours: 06:00, 12:00, 18:00
-```
+Một pipeline có thể có nhiều schedules (hiện Microsoft nêu tối đa 20 schedules/pipeline).
 
-**Ví dụ cấu hình trong Pipeline:**
-1. Mở Pipeline → Click "Schedule" (biểu tượng đồng hồ)
-2. Toggle "Schedule run" → ON
-3. Cấu hình frequency, time, timezone
-4. Apply
+### 3.3 Interval-based schedule (Public Preview) — đừng gọi nhầm là Tumbling Window Trigger
 
-### 3.3 Tumbling Window Trigger
+**Interval-based schedule** tạo các fixed, non-overlapping windows và cung cấp trigger parameters **Window start time / Window end time**.
 
-**Đặc điểm:**
-- Chạy theo **fixed-size, non-overlapping time windows**
-- Đảm bảo mỗi time window được xử lý **đúng một lần**
-- Hỗ trợ **backfill** (xử lý windows trong quá khứ)
-- Có thể **dependency** vào tumbling window trigger khác
+Nhưng tính đến 09/08/2026:
+- đây là **Public Preview**;
+- **time-slice monitoring và backfill chưa có**;
+- không nên học nó như ADF **Tumbling Window Trigger** đầy đủ.
 
-```
-Tumbling Window Examples:
-├── Window Size: 1 hour
-│   Window 1: 00:00 - 01:00 → Process data for this hour
-│   Window 2: 01:00 - 02:00 → Process data for this hour
-│   Window 3: 02:00 - 03:00 → Process data for this hour
-│
-├── Window Size: 1 day
-│   Window 1: 2026-07-01 → Process daily batch
-│   Window 2: 2026-07-02 → Process daily batch
-│   Window 3: 2026-07-03 → Process daily batch
-```
+> [!WARNING]
+> Nếu tài liệu/câu hỏi cũ nói Fabric hiện có Tumbling Window Trigger với built-in backfill và trigger dependency giống Azure Data Factory, đó là thông tin cũ/sai đối với Fabric hiện hành. Khi migrate ADF tumbling-window workload, watermark/backfill/dependency semantics có thể phải **redesign**.
 
-**Use case chính:** 
-- Incremental data processing
-- Đảm bảo không bỏ sót data windows
-- Retry failed windows mà không ảnh hưởng windows khác
+### 3.4 Event-based runs
 
-### 3.4 Event-Based Triggers
+Fabric pipeline có thể được kích hoạt từ các event phù hợp như file/data events và Fabric events. Câu scenario thường tập trung vào ý nghĩa:
+- “chạy ngay khi file tới” → **event-based** thay vì polling schedule;
+- “chạy lúc 06:00 mỗi ngày” → **fixed schedule**;
+- “xử lý theo non-overlapping time interval và cần window start/end” → **interval-based schedule (Preview)**.
 
-**Supported Events:**
+Với storage event, dùng filter/path pattern để giảm false triggers. Trigger metadata có thể được truyền vào pipeline/dynamic expressions khi feature/event cung cấp các trigger parameters tương ứng.
 
-| Event | Mô tả |
-|-------|--------|
-| **Blob Created** | Trigger khi file mới được tạo trong storage account |
-| **Blob Deleted** | Trigger khi file bị xóa |
-| **File Arrival** | Trigger khi file arrives ở specified location |
+### 3.5 Schedule với parameters và Variable library
 
-**Cấu hình Event-Based Trigger:**
+Schedule có thể truyền giá trị cho pipeline parameters. Các parameter names trong schedule phải khớp với parameters khai báo trong pipeline. Fabric còn cho phép lấy value từ **Variable library**, rất hữu ích cho Dev/Test/Prod configuration.
 
-```
-Event Trigger Configuration:
-├── Event: Blob Created
-├── Storage Account: mystorageaccount
-├── Container: /raw-data/
-├── Blob path begins with: sales/
-├── Blob path ends with: .csv
-├── Ignore empty blobs: Yes
-└── Pipeline: ProcessSalesData
-```
+### 3.6 Failure notifications
 
-**Ví dụ use case:**
-- File CSV mới được upload vào Azure Blob Storage → tự động trigger pipeline → ingest vào Lakehouse
-- Partner drops file hàng ngày → event trigger starts ETL
+Scheduled pipeline runs có thể cấu hình failure notifications. Đừng nhầm notification với retry: retry xử lý transient failure của activity; notification báo cho người vận hành.
 
-### 3.5 Notebook Scheduling
+### 3.7 Notebook/Dataflow scheduling — nguyên tắc chọn
 
-**Schedule riêng cho Notebook:**
-1. Mở Notebook → Click "Schedule" trong toolbar
-2. Cấu hình schedule (tương tự pipeline)
-3. Notebook chạy autonomous (không cần pipeline wrapper)
-
-**Lưu ý:**
-- Notebook scheduled runs sử dụng **default Spark pool** hoặc **attached Environment**
-- Không có built-in event triggers cho standalone notebooks → cần Pipeline wrapper cho event-based
-
-### 3.6 Dataflow Gen2 Scheduling
-
-**Cấu hình:**
-1. Right-click Dataflow Gen2 → Settings
-2. Refresh section → Set schedule
-3. Cấu hình frequency, time, timezone
-
-**Lưu ý:**
-- Dataflow Gen2 chỉ hỗ trợ **time-based schedule**, KHÔNG hỗ trợ event-based triggers
-- Cho event-based: Wrap Dataflow trong Pipeline → sử dụng Pipeline event trigger
-
-### 3.7 Best Practices cho Scheduling
-
-1. **Stagger schedules:** Tránh chạy nhiều pipelines cùng lúc → tránh resource contention
-2. **Use UTC timezone** cho consistency across teams
-3. **Consider dependencies:** Đảm bảo source data available trước khi trigger
-4. **Set alerts:** Cấu hình alerts cho failed runs
-5. **Monitor cost:** High-frequency schedules tăng compute cost
-
----
+- Nếu chỉ cần chạy một Notebook theo lịch đơn giản, có thể schedule notebook trực tiếp.
+- Nếu cần event trigger, dependency, nhiều bước, retry/error path, parameters giữa steps → bọc/điều phối bằng **Data Pipeline**.
+- Dataflow Gen2 phù hợp cho low-code transformation; khi workflow cần orchestration nhiều activity, Pipeline là coordinator.
 
 ## 4. IMPLEMENT ORCHESTRATION PATTERNS WITH NOTEBOOKS AND PIPELINES
 
@@ -429,6 +364,9 @@ else:
 
 ### 4.5 Notebook Exit Value (Output từ Notebook)
 
+> [!IMPORTANT]
+> Microsoft đã đổi tên **MSSparkUtils → NotebookUtils**. Namespace cũ vẫn backward-compatible, nhưng nên dùng `notebookutils` cho code mới vì tính năng mới được cập nhật ở namespace này.
+
 ```python
 # Trong Notebook - return value cho Pipeline
 import json
@@ -439,8 +377,8 @@ result = {
     "output_path": "Tables/fact_sales"
 }
 
-# Sử dụng mssparkutils để return exit value
-mssparkutils.notebook.exit(json.dumps(result))
+# Sử dụng NotebookUtils để return exit value
+notebookutils.notebook.exit(json.dumps(result))
 ```
 
 **Lấy output trong Pipeline:**
@@ -561,14 +499,14 @@ Pipeline Dataflow Activity → Settings:
 
 ```python
 # Gọi notebook khác từ notebook hiện tại
-# Sử dụng mssparkutils.notebook.run()
+# Sử dụng notebookutils.notebook.run()
 
 # Chạy synchronous (blocking)
-result = mssparkutils.notebook.run("Transform_Sales", 600, {"load_date": "2026-07-21"})
+result = notebookutils.notebook.run("Transform_Sales", 600, {"load_date": "2026-07-21"})
 # Parameters: notebook_name, timeout_seconds, parameters_dict
 
 # Chạy multiple notebooks parallel
-mssparkutils.notebook.runMultiple([
+notebookutils.notebook.runMultiple([
     {"notebook": "Transform_Sales", "params": {"date": "2026-07-21"}},
     {"notebook": "Transform_Customers", "params": {"date": "2026-07-21"}},
     {"notebook": "Transform_Products", "params": {"date": "2026-07-21"}}
@@ -606,7 +544,7 @@ Pipeline: Ecommerce_Daily_ETL
 │   │   df_clean.write.format("delta")              │
 │   │     .mode("merge")                            │
 │   │     .saveAsTable(f"silver_{table}")           │
-│   │ mssparkutils.notebook.exit("success")        │
+│   │ notebookutils.notebook.exit("success")        │
 │   └──────────────────────────────────────────────┘
 │
 ├── [4] If Condition: 
@@ -645,10 +583,10 @@ D. Data Pipeline with Dataflow Gen2 for extraction and transformation
 **Giải thích:**
 - **Pipeline + Notebook** là combination tối ưu cho use case này:
   - **Copy Activity** trong Pipeline xử lý REST API extraction hiệu quả (built-in REST connector)
-  - **Notebook** xử lý SCD Type 2 logic phức tạp trên 50GB dataset (PySpark/Delta merge)
-- **(A)** Dataflow Gen2 không phù hợp cho 50GB + SCD Type 2 (chi phí compute cao, giới hạn logic phức tạp)
+  - **Notebook** phù hợp với SCD Type 2/Delta `MERGE` phức tạp và cần full programmatic control; 50 GB chỉ là context, không phải hard threshold
+- **(A)** Không loại Dataflow Gen2 chỉ vì “50 GB”; điểm quyết định ở đây là **SCD Type 2/stateful merge logic phức tạp + cần programmatic control**, nên Notebook/PySpark là lựa chọn mạnh hơn
 - **(C)** Notebook có thể làm cả extraction nhưng Copy Activity có built-in REST connector tối ưu hơn
-- **(D)** Dataflow Gen2 vẫn không phù hợp cho 50GB và SCD Type 2
+- **(D)** Không nên loại Dataflow chỉ bằng ngưỡng 50 GB; nhưng SCD2/logic stateful phức tạp thường phù hợp Notebook hơn khi cần full programmatic control
 
 </details>
 
@@ -686,7 +624,7 @@ D. Use an Until activity to iterate through the tables
 **A pipeline contains a Notebook activity. The notebook processes data and needs to return the number of records processed back to the pipeline for a subsequent conditional check. How should the notebook return this value?**
 
 A. Write the count to a Lakehouse table and use a Lookup activity  
-B. Use `mssparkutils.notebook.exit(str(record_count))` and reference the exit value in the pipeline  
+B. Use `notebookutils.notebook.exit(str(record_count))` and reference the exit value in the pipeline  
 C. Set a pipeline variable from within the notebook  
 D. Use `print(record_count)` and capture stdout  
 
@@ -696,7 +634,7 @@ D. Use `print(record_count)` and capture stdout
 **Đáp án: B**
 
 **Giải thích:**
-- `mssparkutils.notebook.exit(value)` là cách chính thức để return output từ Notebook cho Pipeline
+- `notebookutils.notebook.exit(value)` là cách chính thức để return output từ Notebook cho Pipeline
 - Pipeline tham chiếu bằng: `@activity('NotebookActivity').output.result.exitValue`
 - **(A)** Hoạt động nhưng phức tạp và tốn resources không cần thiết
 - **(C)** Notebook KHÔNG thể trực tiếp set pipeline variables
@@ -714,7 +652,7 @@ D. Use `print(record_count)` and capture stdout
 A. Schedule trigger with daily recurrence, and add an If Condition activity to check the day of week  
 B. Schedule trigger configured with weekly recurrence, selecting Monday through Friday  
 C. Event-based trigger that checks the system clock  
-D. Tumbling window trigger with a 24-hour window  
+D. Interval-based schedule with a 24-hour interval  
 
 <details>
 <summary>✅ Đáp án và giải thích</summary>
@@ -725,7 +663,7 @@ D. Tumbling window trigger with a 24-hour window
 - **Weekly recurrence** với selected days (Mon-Fri) là cách đúng để schedule weekday-only runs
 - **(A)** If Condition hoạt động nhưng pipeline vẫn trigger mỗi ngày (kể cả weekends) → waste resources
 - **(C)** Event-based triggers dựa trên storage events, không phải clock
-- **(D)** Tumbling window chạy mỗi 24h regardless of day of week
+- **(D)** Interval-based schedule xử lý non-overlapping intervals, không phải cách tối ưu để biểu diễn weekday-only calendar schedule
 - Schedule trigger cho phép granular control: chọn ngày trong tuần, giờ, timezone
 
 </details>
@@ -737,7 +675,7 @@ D. Tumbling window trigger with a 24-hour window
 **You want a Data Pipeline to automatically start whenever a new CSV file is uploaded to an Azure Blob Storage container. Which trigger type should you use?**
 
 A. Schedule trigger  
-B. Tumbling window trigger  
+B. Interval-based schedule  
 C. Event-based trigger (Blob Created)  
 D. Manual trigger with a polling loop  
 
@@ -749,7 +687,7 @@ D. Manual trigger with a polling loop
 **Giải thích:**
 - **Event-based trigger** với "Blob Created" event tự động detect khi file mới được upload → trigger pipeline
 - **(A)** Schedule trigger chạy theo thời gian cố định, không react to file arrival
-- **(B)** Tumbling window cũng time-based, không event-based
+- **(B)** Interval-based schedule vẫn time-based, không phản ứng trực tiếp với file-arrival event
 - **(D)** Polling loop waste resources và có latency
 - Event trigger cấu hình: storage account, container path, blob path pattern (e.g., ends with .csv)
 
@@ -891,35 +829,23 @@ D. Use a ForEach loop with 3 iterations
 
 ## 📝 TÓM TẮT KIẾN THỨC CẦN NHỚ
 
-| Chủ đề | Điểm then chốt |
-|--------|----------------|
-| **Dataflow Gen2** | Low-code, Power Query, connector-driven; đánh giá folding, complexity, SLA và capacity thay vì ngưỡng dung lượng cứng |
-| **Data Pipeline** | Orchestrator, Copy/Notebook/Dataflow activities, triggers, control flow |
-| **Notebook** | Pro-code, PySpark, large data, complex logic (SCD2, ML) |
-| **Schedule Trigger** | Time-based, frequency/days/hours configurable |
-| **Tumbling Window** | Fixed-size, non-overlapping windows, backfill support |
-| **Event-Based** | Blob Created/Deleted, file path pattern matching |
-| **Parameters** | Pipeline params, Notebook params (toggle cell), Dataflow public params |
-| **Dynamic Expressions** | @pipeline().parameters.X, @utcnow(), @formatDateTime(), @concat() |
-| **Notebook Exit** | mssparkutils.notebook.exit(value), referenced in pipeline |
-| **ForEach** | Iterate array, parallel/sequential, batch count |
-| **Master-Child** | Execute Pipeline activity, pass parameters |
-| **Error Handling** | Retry policy (count + interval), On Failure path |
-| **Fan-In** | Multiple upstream → one downstream, all must succeed |
+| Chủ đề | Phản xạ khi làm bài |
+|---|---|
+| **Dataflow Gen2** | Low-code/Power Query; đánh giá query folding, logic, maintainability, SLA — không dùng ngưỡng GB cứng |
+| **Data Pipeline** | Copy + orchestrate + dependency + parameters + loops + error paths + triggers |
+| **Notebook** | Pro-code/distributed/complex transformation; parameter cell + exit value |
+| **Fixed schedule** | Time-based; cần start/end; frequency/timezone |
+| **Interval-based schedule** | Preview; non-overlapping windows; **chưa có backfill/time-slice monitoring** |
+| **Event-based run** | Phản ứng với event; tránh polling khi event source đáp ứng được |
+| **Variable library** | Centralize config/value sets; dùng được trong pipeline schedules/dynamic content |
+| **Dynamic expressions** | `pipeline().parameters`, `activity().output`, `variables()`, date/string functions |
+| **NotebookUtils** | `notebookutils.notebook.run/runMultiple/exit`; MSSparkUtils cũ backward-compatible |
+| **ForEach** | Metadata-driven loop; kiểm soát parallelism/batch count theo capacity |
+| **Error handling** | Retry transient errors + On Failure/Completion path + log/Fail activity |
 
 ---
 
-> 📖 **Tài liệu tham khảo chính thức:**
-> - [Data Pipeline in Fabric](https://learn.microsoft.com/en-us/fabric/data-factory/data-factory-overview)
-> - [Dataflow Gen2](https://learn.microsoft.com/en-us/fabric/data-factory/dataflows-gen2-overview)
-> - [Notebook Orchestration](https://learn.microsoft.com/en-us/fabric/data-engineering/notebook-orchestration)
-> - [Pipeline Expressions](https://learn.microsoft.com/en-us/fabric/data-factory/expression-language)
-> - [Pipeline Triggers](https://learn.microsoft.com/en-us/fabric/data-factory/pipeline-triggers)
-
-
----
-
-## 6. BỔ SUNG ÔN THI 2026: PARAMETERS VÀ DYNAMIC EXPRESSIONS
+## 6. BỔ SUNG ÔN THI 2026: PARAMETERS, DYNAMIC EXPRESSIONS VÀ VARIABLE LIBRARY
 
 ### 6.1 Pipeline expression mẫu
 
@@ -943,7 +869,11 @@ if not full_load:
     source = source.filter(col("_ingestion_date") == load_date)
 ```
 
-### 6.3 Câu hỏi tình huống bổ sung
+### 6.3 Variable library — config không hard-code
+
+Dùng Variable library khi nhiều pipeline/notebook cần cùng configuration hoặc cần value khác nhau theo environment. Ví dụ `LandingPath`, `TargetWorkspaceId`, `WarehouseName`. Pipeline dynamic content có thể tham chiếu Library variables; NotebookUtils có module `notebookutils.variableLibrary`.
+
+### 6.4 Câu hỏi tình huống bổ sung
 
 **Bạn cần copy 40 bảng theo metadata, chạy tối đa 5 bảng song song và gọi cùng một notebook với tên bảng khác nhau. Pattern nào phù hợp nhất?**
 
@@ -962,10 +892,14 @@ D. Một KQL materialized view
 
 ## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
 
-- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 - [Pipeline runs, schedules and events](https://learn.microsoft.com/en-us/fabric/data-factory/pipeline-runs)
+- [Fabric Data Factory limitations](https://learn.microsoft.com/en-us/fabric/data-factory/data-factory-limitations)
+- [Pipeline expressions](https://learn.microsoft.com/en-us/fabric/data-factory/expression-language)
 - [Notebook activity](https://learn.microsoft.com/en-us/fabric/data-factory/notebook-activity)
-- [Fabric Data Factory overview](https://learn.microsoft.com/en-us/fabric/data-factory/data-factory-overview)
+- [NotebookUtils](https://learn.microsoft.com/en-us/fabric/data-engineering/notebook-utilities)
+- [Variable library integration with pipelines](https://learn.microsoft.com/en-us/fabric/data-factory/variable-library-integration-with-data-pipelines)
+- [Dataflow Gen2 overview](https://learn.microsoft.com/en-us/fabric/data-factory/dataflows-gen2-overview)
 
 ---
 

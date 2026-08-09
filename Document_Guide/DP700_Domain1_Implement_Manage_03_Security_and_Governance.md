@@ -3,8 +3,11 @@
 ### Skills measured as of July 21, 2026
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 04/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
+
+> [!CAUTION]
+> **Không có tài liệu nào có thể bảo đảm “trúng mọi câu hỏi”.** Microsoft nêu rõ danh sách skills là minh họa và đề có thể hỏi các chủ đề liên quan. Mục tiêu của bản này là: phủ đủ blueprint hiện hành, sửa các facts đã thay đổi, và luyện cách chọn đáp án theo **scenario + constraint + least privilege/least operations**.
 
 > **Tài liệu ôn thi DP-700: Fabric Data Engineer Associate**
 > Phần này bao gồm toàn bộ kiến thức về bảo mật và quản trị (security & governance) trong Microsoft Fabric.
@@ -51,11 +54,10 @@ Microsoft Fabric sử dụng mô hình bảo mật **đa lớp** (layered securi
 │  • Column-Level Security (CLS)                       │
 │  • Object-Level Security (OLS)                       │
 │  • Folder/File-Level Security                        │
-│  • Dynamic Data Masking (DDM)                        │
 ├─────────────────────────────────────────────────────┤
 │  Layer 5: INFORMATION PROTECTION                     │
 │  • Sensitivity labels (Microsoft Purview)            │
-│  • Endorsement (Certified, Promoted)                 │
+│  • Endorsement (Promoted, Certified, Master data)    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -63,7 +65,7 @@ Microsoft Fabric sử dụng mô hình bảo mật **đa lớp** (layered securi
 
 - **Principle of Least Privilege:** Cấp quyền tối thiểu cần thiết
 - **Defense in Depth:** Nhiều lớp bảo mật chồng lên nhau
-- **Centralized Governance:** OneLake Security = "define once, enforce everywhere"
+- **Centralized Governance:** OneLake Security hướng tới "define once" và enforcement qua Fabric/supported authorized engines; engine/access mode vẫn phải được kiểm tra
 
 ---
 
@@ -172,615 +174,239 @@ Cho phép share individual items (reports, semantic models, lakehouses) mà KHÔ
 
 ## 4. IMPLEMENT GRANULAR ACCESS CONTROLS
 
-### 4.1 Row-Level Security (RLS)
+### 4.1 Trước tiên: cùng tên nhưng có thể tồn tại ở nhiều security layer
 
-**RLS** giới hạn hàng dữ liệu mà user có thể xem dựa trên identity/role.
+RLS/CLS/OLS có thể xuất hiện trong **OneLake security**, **SQL security** hoặc **semantic model**. Đề thi thường không chỉ hỏi “RLS là gì?” mà hỏi **đặt policy ở đâu để engine X thực thi đúng**.
 
-#### Triển khai RLS trong Semantic Model (DAX)
+### 4.2 Row-Level Security (RLS)
 
-**Bước 1: Tạo Role**
-```dax
--- Trong Power BI / Semantic Model, tạo role:
--- Role name: RegionalSalesRole
--- Table: DimSalesTerritory
--- Filter expression:
-[Region] = USERPRINCIPALNAME()
-```
+**Mục tiêu:** user chỉ thấy một tập **rows**.
 
-**Bước 2: Sử dụng DAX functions**
-```dax
--- USERNAME() - trả về domain\username
--- USERPRINCIPALNAME() - trả về email (user@domain.com)
--- CUSTOMDATA() - trả về custom data string
+- **OneLake RLS (Preview):** tạo rule trong OneLake security role cho table rồi gán users/groups. Fabric/authorized engines lọc rows khi query.
+- **SQL RLS:** dùng security predicate/policy trong SQL layer khi scenario dùng SQL security (đặc biệt Delegated identity mode).
+- **Semantic-model RLS:** dùng model roles/DAX khi yêu cầu bảo mật ở semantic-model/report layer.
 
--- Ví dụ: Dynamic RLS
-[SalesRegion] = LOOKUPVALUE(
-    UserMapping[Region],
-    UserMapping[UserEmail],
-    USERPRINCIPALNAME()
-)
-```
+> [!IMPORTANT]
+> Không dùng pseudo-syntax kiểu `@user_attribute.region` nếu đề/tài liệu không định nghĩa cơ chế mapping đó. Với DP-700, điều quan trọng là chọn **đúng layer và engine**, không phải ghi nhớ một cú pháp giả định.
 
-**Bước 3: Assign users to roles**
-- Fabric Portal → Semantic Model → Security → Manage roles
-- Thêm users/groups vào roles
+### 4.3 Column-Level Security (CLS)
 
-#### Triển khai RLS trong SQL (Lakehouse SQL Endpoint / Warehouse)
+**Mục tiêu:** user thấy table nhưng không thấy một số **columns** nhạy cảm.
 
-```sql
--- Bước 1: Tạo function
-CREATE FUNCTION dbo.fn_SecurityPredicate(@Region AS NVARCHAR(50))
-RETURNS TABLE
-WITH SCHEMABINDING
-AS
-RETURN SELECT 1 AS result
-WHERE @Region = SESSION_CONTEXT(N'user_region')
-   OR IS_MEMBER('db_owner') = 1;
+- OneLake CLS định nghĩa allowed columns trong OneLake role.
+- SQL CLS dùng column-level permissions, ví dụ chỉ `GRANT SELECT` trên cột cho phép.
+- OneLake RLS + CLS trên cùng table phải được thiết kế **trong cùng một role**; combination tách chúng thành nhiều role không được hỗ trợ có thể gây lỗi query.
 
--- Bước 2: Tạo Security Policy
-CREATE SECURITY POLICY dbo.RegionSecurityPolicy
-ADD FILTER PREDICATE dbo.fn_SecurityPredicate(Region)
-ON dbo.FactSales
-WITH (STATE = ON);
-```
+### 4.4 Object-Level / Table-Folder Security
 
-#### Triển khai RLS trong OneLake Security
+**Mục tiêu:** ẩn/chặn cả object thay vì lọc row/column.
 
-```
-OneLake Security Role:
-├── Name: SalesViewerRole
-├── Type: Row-Level Security
-├── Table: fact_sales
-├── Filter: [region] = @user_attribute.region
-└── Members: SalesTeam@company.com
-```
+- OneLake role có thể grant tới table/folder cụ thể.
+- SQL dùng object permissions (`GRANT`/`DENY`) trong SQL-security scenario.
+- Semantic model có OLS cho table/column metadata trong model.
 
-### 4.2 Column-Level Security (CLS)
+### 4.5 Folder/File-Level Security trong OneLake
 
-**CLS** giới hạn cột nào user có thể xem.
+Dùng khi yêu cầu là “team A chỉ đọc `Files/curated/finance/`, không được đọc `Files/raw/pii/`”. Đừng cấp Contributor toàn workspace chỉ để giải quyết yêu cầu folder-level; granular OneLake role phù hợp hơn nếu access path/item được hỗ trợ.
 
-#### Triển khai CLS trong SQL
+### 4.6 Most permissive access wins
 
-```sql
--- Cấp quyền SELECT chỉ trên specific columns
-GRANT SELECT ON dbo.EmployeeData 
-    (EmployeeID, FirstName, LastName, Department) 
-TO [AnalystRole];
+Nếu user thuộc nhiều OneLake roles, quyền rộng hơn có thể thắng quyền hạn chế. Một role full-access + một role RLS cùng table có thể làm RLS không hạn chế như mong muốn. Tránh overlapping roles không cần thiết.
 
--- AnalystRole KHÔNG thể xem: Salary, SSN, BankAccount
--- Nếu query SELECT * FROM EmployeeData → ERROR cho restricted columns
-```
+### 4.7 Decision table
 
-#### Triển khai CLS trong OneLake Security
-
-```
-OneLake Security Role:
-├── Name: RestrictedAnalyst
-├── Type: Column-Level Security
-├── Table: dim_employee
-├── Allowed Columns: [employee_id, name, department, hire_date]
-├── Restricted Columns: [salary, ssn, bank_account]
-└── Members: Analysts@company.com
-```
-
-### 4.3 Object-Level Security (OLS)
-
-**OLS** giới hạn quyền truy cập vào toàn bộ objects (tables, views).
-
-#### Triển khai OLS trong Semantic Model (Tabular Editor)
-
-```json
-// Trong Tabular Editor:
-// Table: ConfidentialFinanceData
-// Object-Level Security: None / Read / Default
-
-// Bước 1: Tạo Role
-{
-    "name": "LimitedAnalyst",
-    "tablePermissions": [
-        {
-            "name": "ConfidentialFinanceData",
-            "metadataPermission": "None"  
-            // None = table bị ẩn hoàn toàn
-        }
-    ]
-}
-```
-
-#### Triển khai OLS trong SQL
-
-```sql
--- DENY SELECT trên entire table
-DENY SELECT ON OBJECT::dbo.SensitiveData TO [LimitedRole];
-
--- Hoặc GRANT SELECT chỉ cho specific tables
-GRANT SELECT ON OBJECT::dbo.PublicData TO [LimitedRole];
-```
-
-### 4.4 Folder/File-Level Security
-
-**Folder/File-Level Security** kiểm soát truy cập tới folders và files trong OneLake.
-
-#### Triển khai trong OneLake Security
-
-```
-OneLake Security Role:
-├── Name: DataScienceTeam
-├── Type: Folder-Level Security
-├── Lakehouse: Sales-Lakehouse
-├── Allowed Folders:
-│   ├── Tables/fact_sales
-│   ├── Tables/dim_customer
-│   └── Files/ml_features/
-├── Denied Folders:
-│   ├── Tables/sensitive_finance
-│   └── Files/raw_pii/
-└── Members: DataScience@company.com
-```
-
-**Cách cấu hình qua UI:**
-1. Mở Lakehouse → Manage OneLake data access
-2. Tạo new role
-3. Chọn folders/tables để grant access
-4. Assign users/groups
-5. Apply
-
-### 4.5 So sánh các loại Access Controls
-
-| Loại | Phạm vi | Áp dụng tại | Engine |
-|------|---------|-------------|--------|
-| **RLS** | Hàng dữ liệu | Semantic Model / SQL / OneLake | Tất cả |
-| **CLS** | Cột dữ liệu | SQL / OneLake | SQL endpoint, Spark, Direct Lake |
-| **OLS** | Table/Object | Semantic Model / SQL | Tất cả |
-| **Folder/File** | Folders trong OneLake | OneLake Security | Spark, SQL endpoint, Direct Lake |
-
-> 💡 **Mẹo thi:** OneLake Security theo mô hình **"define once, enforce consistently"**. Chính sách được thực thi bởi các Fabric engines được hỗ trợ và authorized engines; engine không được ủy quyền có thể bị chặn. Không nên diễn giải là mọi engine bên ngoài đều tự động hiểu RLS/CLS.
+| Requirement | Công cụ/layer nghĩ tới trước |
+|---|---|
+| Chỉ rows APAC | RLS |
+| Ẩn Salary/SSN columns | CLS |
+| Không được thấy table Payroll | OLS/object permission |
+| Chỉ được đọc một folder OneLake | OneLake table/folder role |
+| Mask email nhưng vẫn query được | DDM (SQL layer) |
+| Power BI model lọc theo user | Semantic-model RLS |
 
 ---
 
 ## 5. IMPLEMENT DYNAMIC DATA MASKING
 
-### 5.1 Dynamic Data Masking (DDM) là gì?
+### 5.1 DDM là gì?
 
-DDM **che giấu dữ liệu nhạy cảm** trong kết quả query cho non-privileged users mà KHÔNG thay đổi dữ liệu gốc.
+**Dynamic Data Masking (DDM)** che giá trị trong **query result** cho người không có `UNMASK`; dữ liệu gốc không bị thay đổi. Trong Fabric Data Warehouse, DDM áp dụng cho **Warehouse và SQL analytics endpoint**.
 
-### 5.2 Các loại Masking Functions
+### 5.2 Bốn masking functions cần biết
 
-| Function | Mô tả | Input | Output |
-|----------|--------|-------|--------|
-| **Default** | Che hoàn toàn | "Hello" | "XXXX" |
-| **Email** | Che email | "user@domain.com" | "uXXX@XXXX.com" |
-| **Random** | Số ngẫu nhiên trong range | 123 | 87 (random) |
-| **Partial** | Hiện ký tự đầu/cuối | "0123456789" | "01XXXXX89" |
-| **Custom String** | Thay bằng chuỗi custom | "Sensitive" | "****" |
+| Function | Ý nghĩa |
+|---|---|
+| `default()` | Mask mặc định theo data type |
+| `email()` | Mask dạng email |
+| `random(start, end)` | Số ngẫu nhiên trong range |
+| `partial(prefix,"padding",suffix)` | Giữ một phần đầu/cuối, mask phần giữa |
 
-### 5.3 Triển khai DDM trong Fabric SQL
-
-#### Tạo mask trên column mới:
 ```sql
-CREATE TABLE dbo.CustomerData (
-    CustomerID    INT NOT NULL PRIMARY KEY,
-    FirstName     NVARCHAR(100) MASKED WITH (FUNCTION = 'partial(2, "XXX", 0)') NOT NULL,
-    LastName      NVARCHAR(100) NOT NULL,
-    Email         NVARCHAR(255) MASKED WITH (FUNCTION = 'email()') NOT NULL,
-    Phone         NVARCHAR(20)  MASKED WITH (FUNCTION = 'default()') NULL,
-    SSN           CHAR(11)      MASKED WITH (FUNCTION = 'partial(0, "XXX-XX-", 4)') NOT NULL,
-    CreditScore   INT           MASKED WITH (FUNCTION = 'random(100, 999)') NULL
+CREATE TABLE dbo.Customer (
+    CustomerId bigint NOT NULL,
+    Email varchar(256) MASKED WITH (FUNCTION = 'email()') NULL,
+    CardNumber varchar(32) MASKED WITH (FUNCTION = 'partial(0,"XXXX-XXXX-XXXX-",4)') NULL
 );
+
+GRANT UNMASK ON dbo.Customer TO [Auditor@contoso.com];
+REVOKE UNMASK ON dbo.Customer TO [Auditor@contoso.com];
 ```
 
-#### Thêm mask vào column existing:
-```sql
-ALTER TABLE dbo.CustomerData
-ALTER COLUMN Phone ADD MASKED WITH (FUNCTION = 'default()');
-```
+### 5.3 DDM không phải là security boundary hoàn chỉnh
 
-#### Xóa mask:
-```sql
-ALTER TABLE dbo.CustomerData
-ALTER COLUMN Phone DROP MASKED;
-```
+DDM chủ yếu giảm **accidental exposure**. Người có query permission vẫn có thể suy luận dữ liệu bằng predicate/aggregate trong một số tình huống. Với dữ liệu nhạy cảm, phải kết hợp **least privilege**, object/column/row controls và permissions phù hợp.
 
-### 5.4 UNMASK Permission
+### 5.4 Bẫy với OneLake SQL analytics endpoint access mode
 
-```sql
--- Cấp quyền UNMASK cho specific user
-GRANT UNMASK ON dbo.CustomerData TO [TrustedAnalyst];
+- **User identity mode:** table access/RLS/CLS/OLS đến từ OneLake security; **DDM không được OneLake security hỗ trợ**.
+- **Delegated identity mode:** dùng SQL security; DDM, SQL RLS, CLS, `GRANT/REVOKE` hoạt động theo SQL layer.
 
--- Cấp UNMASK cho toàn bộ database
-GRANT UNMASK TO [DataAdmin];
-
--- Revoke UNMASK
-REVOKE UNMASK ON dbo.CustomerData FROM [TrustedAnalyst];
-```
-
-### 5.5 DDM và Workspace Roles
-
-| Role | Thấy masked data? |
-|------|:------------------:|
-| **Admin** | ❌ (thấy dữ liệu gốc) |
-| **Member** | ❌ (thấy dữ liệu gốc) |
-| **Contributor** | ❌ (thấy dữ liệu gốc) |
-| **Viewer** (không có UNMASK) | ✅ (thấy data masked) |
-| **Viewer** (có UNMASK) | ❌ (thấy dữ liệu gốc) |
-
-> ⚠️ **Quan trọng cho thi:** DDM chỉ effective cho users KHÔNG CÓ elevated permissions (Admin/Member/Contributor bypass DDM). Chỉ Viewer hoặc users với limited SQL permissions mới bị mask.
-
-### 5.6 DDM và Power BI
-
-- Khi sử dụng **Direct Lake** mode với DDM → Power BI có thể fallback sang **DirectQuery** mode để enforce masking
-- **Import Mode** → DDM KHÔNG được enforce vì data đã được imported vào memory
-- Best practice: Sử dụng Direct Lake hoặc DirectQuery khi cần DDM enforcement
-
-### 5.7 Ví dụ minh họa
-
-```
-Query bởi User KHÔNG có UNMASK permission:
-
-SELECT FirstName, Email, Phone, SSN FROM dbo.CustomerData;
-
-Kết quả:
-| FirstName | Email            | Phone          | SSN            |
-|-----------|------------------|----------------|----------------|
-| JoXXX     | jXXX@XXXX.com   | xxxxxxxxxxxx   | XXX-XX-4532    |
-| MaXXX     | mXXX@XXXX.com   | xxxxxxxxxxxx   | XXX-XX-7891    |
-
-Query bởi User CÓ UNMASK permission:
-
-| FirstName | Email              | Phone          | SSN            |
-|-----------|--------------------|----------------|----------------|
-| John      | john@company.com   | 555-123-4567   | 123-45-4532    |
-| Mary      | mary@company.com   | 555-987-6543   | 456-78-7891    |
-```
-
----
+> 💡 Nếu câu hỏi cần DDM qua SQL analytics endpoint, hãy kiểm tra access mode trước khi chọn đáp án.
 
 ## 6. APPLY SENSITIVITY LABELS TO ITEMS
 
-### 6.1 Sensitivity Labels là gì?
+### 6.1 Sensitivity label dùng để làm gì?
 
-**Sensitivity Labels** từ **Microsoft Purview Information Protection** được áp dụng lên Fabric items để phân loại và bảo vệ dữ liệu theo chính sách tổ chức.
+Sensitivity labels của **Microsoft Purview Information Protection** giúp phân loại độ nhạy (ví dụ Public / Internal / Confidential) và mang metadata bảo vệ đi cùng item/data. Không nên đồng nhất “gắn label” với “cấp/thu hồi data permission”.
 
-### 6.2 Các mức Sensitivity Labels phổ biến
+### 6.2 Inheritance — kiến thức mới quan trọng
 
-| Label | Mô tả | Ví dụ áp dụng |
-|-------|--------|----------------|
-| **Public** | Dữ liệu công khai | Annual reports, marketing materials |
-| **General** | Dữ liệu nội bộ | Internal communications, training docs |
-| **Confidential** | Dữ liệu bí mật | Financial data, employee records |
-| **Highly Confidential** | Tối mật | PII, trade secrets, M&A data |
+Fabric có thể reevaluate/inherit label khi:
+- tạo item mới từ item đã có label;
+- sửa item làm thay đổi data/content;
+- thêm data source mới;
+- tạo lineage relationship mới.
 
-### 6.3 Cách áp dụng Sensitivity Labels
+Nguyên tắc an toàn:
+- automatic label **không ghi đè** label được apply thủ công;
+- label ít restrictive hơn **không ghi đè** label restrictive hơn.
 
-**Thủ công:**
-1. Right-click item → Settings
-2. Trong Sensitivity label section → Chọn label
-3. Save
+### 6.3 Protection policies — phân biệt với “protected label”
 
-**Tự động:**
-- Auto-labeling policies trong Microsoft Purview
-- Downstream inheritance (label tự động truyền từ data source → downstream items)
-- Default labels (tenant hoặc domain level)
+Đây là phần 2026 dễ nhầm:
 
-### 6.4 Sensitivity Label Inheritance
+- **Protected sensitivity label** truyền thống trong Fabric chủ yếu kiểm soát quyền **thay đổi/gỡ label**; bản thân nó không mặc định là item-access ACL.
+- **Microsoft Purview protection policies for Fabric** có thể liên kết với sensitivity label để **chặn truy cập item** cho user/group không nằm trong policy.
+- Protection policies hiện hỗ trợ native Fabric item types và semantic models, nhưng **không tích hợp quyền item này vào Git integration/deployment pipelines**; CI/CD vẫn dựa vào workspace permissions.
 
-```
-Upstream (Data Source)              Downstream (Reports)
-┌───────────────┐                  ┌───────────────┐
-│ Lakehouse     │                  │ Report        │
-│ Label: Highly │  ──inherits──>   │ Label: Highly │
-│ Confidential  │                  │ Confidential  │
-└───────────────┘                  └───────────────┘
-        │
-        v
-┌───────────────┐
-│ Semantic Model│
-│ Label: Highly │
-│ Confidential  │
-└───────────────┘
-```
+### 6.4 Domain-level default sensitivity label
 
-> 💡 **Mẹo thi:** Sensitivity labels **downstream inheritance** tự động lan truyền labels từ data source xuống các items phụ thuộc. Đây là cơ chế "label flows with data".
+Domain Admin có thể đặt default label cho domain nếu tenant setting tương ứng được bật. Feature này hiện có hạn chế: **Git integration và deployment pipelines không được hỗ trợ** cho domain-level default-label behavior.
 
-### 6.5 Export Controls
+### 6.5 Exam decision rule
 
-Sensitivity labels có thể kiểm soát **export behavior**:
-- Chặn export tới Excel/PDF nếu label là "Highly Confidential"
-- Yêu cầu encryption khi export
-- Áp dụng watermark trên exported documents
-
-### 6.6 Prerequisites cho Sensitivity Labels
-
-1. **Microsoft Purview Information Protection** license
-2. Tenant setting: "Allow users to apply sensitivity labels for Fabric content" = **Enabled**
-3. Labels phải được **published** từ Microsoft Purview Compliance Portal
-4. Users phải có label published tới họ (through label policy)
-
----
+- “Classify/protect information, inherit label” → Sensitivity label.
+- “Only certain groups may keep access to items carrying label X” → Protection policy.
+- “Limit rows/columns/tables/files” → OneLake/SQL/Semantic-model data security, không phải label đơn thuần.
 
 ## 7. ENDORSE ITEMS
 
-### 7.1 Endorsement là gì?
+### 7.1 Endorsement giúp người dùng tìm nội dung đáng tin cậy
 
-**Endorsement** giúp users xác định items đáng tin cậy và chất lượng cao trong tổ chức.
+Fabric hiện có **ba** endorsement badges:
 
-### 7.2 Các mức Endorsement
+| Badge | Ý nghĩa | Ai có thể áp dụng |
+|---|---|---|
+| **Promoted** | Chủ sở hữu/creator cho rằng item sẵn sàng để chia sẻ/tái sử dụng | User có Write permission |
+| **Certified** | Đã được reviewer do tổ chức ủy quyền xác nhận đạt quality standards | Certifier do Fabric admin cho phép |
+| **Master data** | Data item là nguồn dữ liệu cốt lõi/authoritative source of truth | Người được Fabric admin cho phép; chỉ áp dụng cho item chứa data |
 
-| Mức | Icon | Ai có thể đặt? | Mục đích |
-|-----|------|-----------------|----------|
-| **Promoted** | 🔵 Badge | Workspace Member, Contributor, Admin | Items đã sẵn sàng cho wider use |
-| **Certified** | 🟢 Badge | Chỉ users được Fabric Admin authorize | Items đã qua review chất lượng chính thức |
-| **No endorsement** | Không có | Mặc định | Items chưa được review |
+Certification và Master data phải được Fabric admin enable. Certification settings có thể được delegate theo domain.
 
-### 7.3 Cách Endorse Items
+### 7.2 Đừng nhầm Endorsement với Security
 
-**Promote:**
-1. Right-click item → Settings → Endorsement
-2. Chọn "Promoted"
-3. (Tùy chọn) Thêm description
-4. Apply
+Endorsement là **trust/discovery/governance signal**, không tự cấp data access. Một Lakehouse được Certified/Master data vẫn cần workspace/item/data permissions đúng.
 
-**Certify:**
-1. Phải được Fabric Admin authorize (tenant setting)
-2. Right-click item → Settings → Endorsement
-3. Chọn "Certified"
-4. Apply
+### 7.3 Scenario phản xạ
 
-### 7.4 Cấu hình Certification Authorization
-
-**Đường dẫn:** Admin Portal → Tenant settings → Certification
-
-| Setting | Mô tả |
-|---------|--------|
-| **Enable certification** | Bật/tắt tính năng certification |
-| **Specify users or groups** | Chỉ định ai có thể certify items |
-| **Certification documentation URL** | Link tới quy trình certification nội bộ |
-
-### 7.5 Endorsement trong Data Discovery
-
-- **OneLake Data Hub** hiển thị badges endorsement
-- Users có thể **filter** items theo endorsement level
-- Certified items xuất hiện **đầu tiên** trong search results
-- Endorsement giúp **build trust** trong self-service BI environment
-
-### 7.6 Ví dụ minh họa
-
-```
-OneLake Data Hub:
-├── 🟢 Sales Performance Report [CERTIFIED]
-│   └── Reviewed and approved by Data Governance Team
-├── 🔵 Customer Segmentation Model [PROMOTED]
-│   └── Ready for wider team use
-├──    Revenue Forecast v3 [NO ENDORSEMENT]
-│   └── Work in progress
-└── 🔵 Inventory Dashboard [PROMOTED]
-    └── Shared by Operations team
-```
-
----
+- “Team owner tự đánh dấu nội dung đáng dùng” → **Promoted**.
+- “Tổ chức cần reviewer chính thức xác nhận” → **Certified**.
+- “Danh mục khách hàng chuẩn, authoritative source of truth” → **Master data**.
 
 ## 8. IMPLEMENT AND USE MICROSOFT FABRIC AUDIT LOGS
 
-### 8.1 Audit Logs là gì?
+### 8.1 Audit log trả lời câu hỏi nào?
 
-**Fabric Audit Logs** theo dõi tất cả hoạt động trong tenant, bao gồm ai làm gì, khi nào, và trên item nào.
+Audit log dùng cho **who did what, on which item, when** — phục vụ compliance, investigation và records management.
 
-### 8.2 Nơi xem Audit Logs
+### 8.2 Nơi truy cập đúng
 
-| Nơi | Cách truy cập |
-|-----|---------------|
-| **Microsoft Purview Compliance Portal** | purview.microsoft.com → Audit |
-| **Microsoft 365 Admin Center** | admin.microsoft.com → Audit |
-| **PowerShell** | Search-UnifiedAuditLog cmdlet |
-| **Office 365 Management API** | REST API calls |
-| **Fabric Monitoring Hub** | Fabric Portal → Monitoring Hub |
+Theo Microsoft hiện hành, Fabric user activities được tìm trong **Microsoft Purview portal**. Người truy cập cần role audit phù hợp (ví dụ Audit Logs role trong Exchange Online role model). Có thể truy vấn bằng Purview UI và PowerShell/Exchange Online tooling.
 
-### 8.3 Các hoạt động được audit (Activities)
+> [!IMPORTANT]
+> **Monitoring Hub không phải Audit Log.** Monitoring Hub theo dõi operational runs/status (pipeline, notebook, Dataflow...), còn Purview audit log theo dõi user/admin activities để audit/compliance.
 
-#### Workspace Activities:
-| Activity | Operation Name |
-|----------|---------------|
-| Tạo workspace | CreateFolder |
-| Xóa workspace | DeleteFolder |
-| Thay đổi workspace access | UpdateFolderAccess |
-| Gán workspace vào domain | UpdateDataDomainFoldersRelationsAsAdmin |
+### 8.3 Đừng học retention bằng một con số cố định
 
-#### Data Activities:
-| Activity | Operation Name |
-|----------|---------------|
-| Xem report | ViewReport |
-| Export report | ExportReport |
-| Share item | ShareReport |
-| Download data | DownloadReport |
-| Refresh dataset | RefreshDataset |
+Audit retention phụ thuộc Microsoft Purview Audit licensing và retention policies. Vì các mức retention/licensing có thể thay đổi, đề scenario nên được giải theo yêu cầu **compliance retention + Purview audit policy**, không mặc định “Fabric audit luôn 90 ngày”.
 
-#### Admin Activities:
-| Activity | Operation Name |
-|----------|---------------|
-| Thay đổi tenant settings | SetTenantSettings |
-| Thay đổi capacity settings | SetCapacitySettings |
-| Thêm/xóa admin | AddAdmin, DeleteAdmin |
+### 8.4 Ví dụ câu hỏi
 
-### 8.4 Truy xuất Audit Logs bằng PowerShell
+**Yêu cầu:** Điều tra ai đã thay đổi quyền trên một Fabric item 30 ngày trước.
 
-```powershell
-# Kết nối Exchange Online
-Connect-ExchangeOnline -UserPrincipalName admin@company.com
-
-# Tìm kiếm audit logs (ví dụ: tìm tất cả report views trong 7 ngày qua)
-$startDate = (Get-Date).AddDays(-7)
-$endDate = Get-Date
-
-Search-UnifiedAuditLog `
-    -StartDate $startDate `
-    -EndDate $endDate `
-    -RecordType PowerBIAudit `
-    -Operations "ViewReport" `
-    -ResultSize 5000 |
-    Select-Object CreationDate, UserIds, Operations, AuditData |
-    Export-Csv -Path "FabricAuditLogs.csv" -NoTypeInformation
-```
-
-### 8.5 Truy xuất qua REST API
-
-```python
-# Office 365 Management API
-import requests
-
-url = "https://manage.office.com/api/v1.0/{tenant_id}/activity/feed/subscriptions/content"
-headers = {
-    "Authorization": f"Bearer {access_token}",
-    "Content-Type": "application/json"
-}
-params = {
-    "contentType": "Audit.General",
-    "startTime": "2026-07-01T00:00:00",
-    "endTime": "2026-07-31T23:59:59"
-}
-
-response = requests.get(url, headers=headers, params=params)
-audit_data = response.json()
-```
-
-### 8.6 Monitoring Hub
-
-**Fabric Monitoring Hub** cung cấp real-time monitoring:
-- Xem activities hiện tại và gần đây
-- Filter theo item type, user, status
-- Drill vào chi tiết từng activity
-- KHÔNG thay thế cho Audit Logs (Monitoring Hub = operational, Audit Logs = compliance)
-
-### 8.7 Best Practices cho Audit Logs
-
-1. **Enable Audit Logging** ở tenant level (mặc định đã bật cho Microsoft 365)
-2. **Set up automatic export** tới Azure Log Analytics hoặc Event Hub cho long-term retention
-3. **Create alerts** cho suspicious activities (nhiều export trong thời gian ngắn, unauthorized access attempts)
-4. **Regular review** audit logs theo schedule (weekly/monthly)
-5. **Retention policy:** Mặc định 90 ngày, có thể extend tới 10 năm với proper license
-
----
+→ Tìm **Microsoft Purview audit log**, không dùng Monitoring Hub hoặc Capacity Metrics app.
 
 ## 9. CONFIGURE AND IMPLEMENT ONELAKE SECURITY
 
-### 9.1 OneLake Security Overview
+### 9.1 Mental model: Control plane trước, data plane sau
 
-**OneLake Security** là hệ thống centralized security cho phép định nghĩa access controls một lần và thực thi trên các Fabric engines được hỗ trợ hoặc authorized engines. Phạm vi item/engine và limitations phải được kiểm tra theo tài liệu hiện hành.
+Một user muốn đọc data thường cần hai lớp:
+1. **Artifact/control-plane access**: workspace role hoặc item `Read`.
+2. **Data-plane rules**: OneLake role hoặc SQL permissions tùy engine/access mode.
 
-### 9.2 Security Modes
+Nếu thiếu Artifact `Read`, SQL analytics endpoint có thể từ chối kết nối dù SQL/OneLake role nghe có vẻ đúng.
 
-| Mode | Mô tả | Access Control |
-|------|--------|----------------|
-| **Delegated Identity Mode** | SQL endpoint connect to OneLake bằng workspace/item owner identity | SQL permissions (GRANT, REVOKE, RLS, CLS, DDM) |
-| **User Identity Mode** | SQL endpoint pass through user's identity to OneLake | OneLake roles và policies |
+### 9.2 OneLake security roles
 
-### 9.3 OneLake Security Roles
+OneLake security có thể cấp quyền tới folder/table và thêm:
+- **RLS**: lọc rows;
+- **CLS**: lọc columns;
+- **OLS**: giới hạn object/table/folder;
+- **ReadWrite** granular permission cho một số supported items/scenarios.
 
-**Tạo OneLake Security Role:**
+RLS + CLS có thể kết hợp **trong cùng một OneLake role**. Việc tách RLS và CLS của cùng table vào nhiều role theo combination không hỗ trợ có thể gây query errors.
 
-```
-OneLake Security → Create Role:
-├── Role Name: "SalesAnalyst"
-├── Security Type: Folder-Level
-├── Permissions:
-│   ├── Tables/
-│   │   ├── fact_sales → ✅ Read
-│   │   ├── dim_customer → ✅ Read
-│   │   ├── dim_product → ✅ Read
-│   │   └── fact_hr_payroll → ❌ No Access
-│   └── Files/
-│       ├── reports/ → ✅ Read
-│       └── raw_sensitive/ → ❌ No Access
-├── Row Filters:
-│   └── fact_sales: [region] = 'North America'
-├── Column Restrictions:
-│   └── dim_customer: HIDE [ssn], [credit_card]
-└── Members:
-    ├── SalesTeam@company.com
-    └── RegionalManagers@company.com
-```
+### 9.3 Multiple roles: most permissive access wins
 
-### 9.4 Enforcement Across Engines
+Nếu user thuộc nhiều OneLake roles, access rộng hơn có thể thắng access hạn chế hơn. Ví dụ một role cho full table và role khác RLS cùng table → full-table grant có thể khiến RLS không hạn chế user như mong muốn. Vì vậy thiết kế roles phải tránh overlap không cần thiết.
 
-OneLake Security được enforce nhất quán trên:
+### 9.4 Elevated workspace roles — baseline và ngoại lệ
 
-| Engine | Enforcement |
-|--------|-------------|
-| **Spark** (Notebooks, Spark Jobs) | ✅ |
-| **SQL Analytics Endpoint** | ✅ |
-| **Power BI Direct Lake** | ✅ |
-| **OneLake APIs** (ADLS Gen2) | ✅ |
-| **Shortcuts** (Internal) | ✅ |
+Baseline: Admin/Member/Contributor có broad workspace data privileges và **thường bypass** OneLake granular security trên local tables; để test end-user filtering, dùng Viewer hoặc explicit item Read.
 
-### 9.5 OneLake Security và Workspace Roles
+Nhưng không được biến thành quy tắc tuyệt đối:
+- shortcut-backed data còn phụ thuộc quyền/policy ở **producer/source**;
+- tài liệu troubleshooting hiện ghi nhận một số RLS behavior trong **user identity mode** có thể áp dụng rộng hơn theo scenario.
 
-```
-                    ┌─────────────────────────────┐
-                    │        OneLake Security       │
-                    │     ┌─────────────────┐      │
-                    │     │  Security Roles  │      │
-                    │     │  (RLS/CLS/FLS)  │      │
-                    │     └────────┬────────┘      │
-                    │              │                │
-                    │     Enforced for:             │
-                    │     • Viewer role             │
-                    │     • Item-level shared users │
-                    │              │                │
-                    │     BYPASSED by:              │
-                    │     • Admin role              │
-                    │     • Member role             │
-                    │     • Contributor role         │
-                    └─────────────────────────────┘
-```
+### 9.5 SQL analytics endpoint: User identity vs Delegated identity
 
-### 9.6 Security Propagation qua Shortcuts
+| Security target | User identity mode | Delegated identity mode |
+|---|---|---|
+| Table access | OneLake security roles | SQL `GRANT/REVOKE` |
+| RLS | OneLake RLS | SQL `CREATE SECURITY POLICY` |
+| CLS | OneLake CLS | SQL column permissions |
+| DDM | **Không hỗ trợ trong OneLake security** | SQL DDM |
+| Identity tới OneLake | Signed-in user passthrough | Item/workspace owner delegated |
 
-```
-Source Lakehouse (OneLake Security: RLS applied)
-    │
-    ├── Internal Shortcut ──> Target Lakehouse
-    │                         (RLS automatically enforced)
-    │
-    └── External Shortcut ──> ADLS Gen2
-                              (Passthrough auth: user needs
-                               ADLS permissions)
-```
+**User identity mode** phù hợp khi muốn centralized OneLake governance xuyên Spark/SQL/Power BI-supported paths. **Delegated identity mode** phù hợp khi cần full SQL security model.
 
-### 9.7 Ví dụ triển khai hoàn chỉnh
+### 9.6 Authorized-engine model
 
-**Tình huống:** Công ty cần áp dụng security model phức tạp cho Sales Lakehouse.
+OneLake policy được định nghĩa tập trung, nhưng enforcement phải do engine được Fabric hỗ trợ/authorize thực hiện. Nếu engine không thể enforce RLS/CLS, OneLake có thể **block access** thay vì cho đọc raw files và bỏ qua policy.
 
-```
-Sales-Lakehouse Security Configuration:
-┌─────────────────────────────────────────────────────┐
-│ Role 1: SalesManager_NorthAmerica                    │
-│ • Folders: fact_sales ✅, dim_customer ✅,            │
-│           dim_product ✅                              │
-│ • RLS: fact_sales WHERE region = 'NA'               │
-│ • CLS: dim_customer HIDE [ssn, phone]               │
-│ • Members: NAManagers@company.com                    │
-├─────────────────────────────────────────────────────┤
-│ Role 2: SalesManager_EMEA                            │
-│ • Folders: fact_sales ✅, dim_customer ✅             │
-│ • RLS: fact_sales WHERE region = 'EMEA'             │
-│ • CLS: dim_customer HIDE [ssn, phone]               │
-│ • Members: EMEAManagers@company.com                  │
-├─────────────────────────────────────────────────────┤
-│ Role 3: DataScientist                                │
-│ • Folders: fact_sales ✅, dim_customer ✅,            │
-│           dim_product ✅, ml_features/ ✅             │
-│ • RLS: None (see all regions)                        │
-│ • CLS: dim_customer HIDE [ssn] (can see phone)     │
-│ • Members: DataScience@company.com                   │
-├─────────────────────────────────────────────────────┤
-│ Role 4: Executive                                    │
-│ • Folders: ALL ✅                                     │
-│ • RLS: None                                          │
-│ • CLS: None                                          │
-│ • Members: CLevel@company.com                        │
-└─────────────────────────────────────────────────────┘
-```
+### 9.7 Shortcut security
 
----
+Đừng giả định role ở consumer workspace nâng quyền trên producer. Quyền ở source/producer vẫn quan trọng. Trong delegated SQL mode, shortcut-backed table có OneLake RLS/CLS/OLS ở source có thể bị block để tránh bypass chính sách.
+
+### 9.8 Exam algorithm
+
+1. User có Artifact `Read`/workspace access chưa?
+2. Engine nào đang query: Spark, SQL analytics endpoint, Direct Lake, external engine?
+3. Nếu SQL endpoint: **User identity hay Delegated identity?**
+4. User có elevated workspace role không?
+5. Có nhiều OneLake role overlap không?
+6. Data local hay qua shortcut/producer khác?
+7. Policy nào thực sự enforce: OneLake hay SQL?
 
 ## 10. CÂU HỎI MÔ PHỎNG BÀI THI
 
@@ -1040,77 +666,58 @@ D. OneLake Security only works with SQL analytics endpoint
 
 ## 📝 TÓM TẮT KIẾN THỨC CẦN NHỚ
 
-| Chủ đề | Điểm then chốt |
-|--------|----------------|
-| **Workspace Roles** | Admin > Member > Contributor > Viewer; Admin/Member/Contributor bypass OneLake Security |
-| **Item-Level** | Share individual items: Read, ReadAll, Write, Build, Reshare |
-| **ReadAll** | Cho phép SQL endpoint query; cần cho Lakehouse/Warehouse |
-| **Build** | Cho phép tạo reports từ semantic model (self-service BI) |
-| **RLS** | Filter rows: DAX (semantic model), T-SQL (SQL), OneLake roles |
-| **CLS** | Hide columns: GRANT/DENY SELECT on columns (T-SQL), OneLake roles |
-| **OLS** | Hide entire tables/objects: Tabular Editor, T-SQL |
-| **DDM** | Mask display: default(), email(), random(), partial(); UNMASK permission |
-| **Sensitivity Labels** | Microsoft Purview; downstream inheritance; export controls |
-| **Endorsement** | Promoted (Member+) vs Certified (authorized users only) |
-| **Audit Logs** | Purview Compliance Portal, PowerShell, REST API |
-| **OneLake Security** | centralized; enforced by supported Fabric engines/authorized engines; elevated workspace roles bypass; bypass by elevated roles |
-
----
-
-> 📖 **Tài liệu tham khảo chính thức:**
-> - [Security in Microsoft Fabric](https://learn.microsoft.com/en-us/fabric/security/)
-> - [OneLake Security](https://learn.microsoft.com/en-us/fabric/onelake/security/onelake-security-overview)
-> - [Dynamic Data Masking](https://learn.microsoft.com/en-us/fabric/data-warehouse/dynamic-data-masking)
-> - [Sensitivity Labels in Fabric](https://learn.microsoft.com/en-us/fabric/governance/sensitivity-labels)
-> - [Audit Logs](https://learn.microsoft.com/en-us/fabric/admin/track-user-activities)
-
+| Chủ đề | Phản xạ đúng |
+|---|---|
+| Workspace / item access | Xác định control-plane permission trước |
+| OneLake RLS/CLS/OLS | Fine-grained data access; chú ý overlap/multiple roles |
+| SQL access modes | User identity = OneLake policies; Delegated identity = SQL security |
+| DDM | 4 mask types; query-result masking; không thay data gốc; không phải security boundary hoàn chỉnh |
+| Sensitivity label | Classification/inheritance/information protection metadata |
+| Protection policy | Dùng label để giới hạn **item access** cho group/user được phép |
+| Endorsement | Promoted, Certified, **Master data**; trust/discovery, không phải ACL |
+| Audit | Microsoft Purview audit log; khác Monitoring Hub |
+| Elevated roles | Admin/Member/Contributor thường bypass local OneLake granular security; kiểm tra exceptions/shortcuts |
+| Authorized engines | Engine không enforce được RLS/CLS có thể bị OneLake block |
 
 ---
 
 ## 11. BỔ SUNG ÔN THI 2026: SECURITY PRECEDENCE
 
-### 11.1 Thứ tự suy luận khi làm câu hỏi
+### 11.1 Thứ tự suy luận
 
-1. User có workspace Admin/Member/Contributor không? Nếu có, họ có elevated data access và OneLake RLS/CLS không hạn chế họ.
-2. Nếu là Viewer hoặc chỉ item Read, kiểm tra item permissions và membership trong OneLake security role.
-3. Nếu truy cập qua SQL analytics endpoint, phân biệt SQL permissions với OneLake security và khả năng fallback của Direct Lake.
-4. Nếu engine bên ngoài truy cập table có RLS/CLS, kiểm tra engine có được authorized không; nếu không, access có thể bị block.
+1. **Artifact access** trước: user có Read/workspace access không?
+2. Xác định **engine/access mode**.
+3. Nếu OneLake mode: resolve role membership + most-permissive effect + RLS/CLS/OLS.
+4. Nếu delegated SQL mode: resolve SQL grants/roles/RLS/CLS/DDM.
+5. Nếu shortcut: kiểm tra producer/source security, không chỉ consumer workspace.
+6. Nếu external engine: kiểm tra authorized-engine support.
 
-### 11.2 Ví dụ T-SQL DDM
+### 11.2 OneLake ReadWrite — cập nhật đáng chú ý
 
-```sql
--- Ví dụ trong Fabric Warehouse/SQL experience hỗ trợ DDM
-CREATE TABLE dbo.Customer (
-    CustomerId bigint NOT NULL,
-    Email varchar(256) MASKED WITH (FUNCTION = 'email()') NULL,
-    CreditCard varchar(32) MASKED WITH (FUNCTION = 'partial(0,"XXXX-XXXX-XXXX-",4)') NULL
-);
-```
+OneLake security hiện có granular **ReadWrite** cho supported items/scenarios. Điều này cho phép Viewer hoặc user chỉ có item Read được cấp write tới folder/table cụ thể qua các supported write paths như Spark/OneLake APIs mà không cần nâng họ lên Contributor toàn workspace. Đây là ví dụ điển hình của **least privilege**.
 
-### 11.3 Câu hỏi tình huống bổ sung
+### 11.3 Câu bẫy mẫu
 
-**Một user thuộc Contributor role và đồng thời là thành viên OneLake role chỉ cho phép đọc bảng `Sales`. User vẫn đọc được bảng `Payroll`. Nguyên nhân hợp lý nhất?**
+**User cần chỉ sửa dữ liệu trong một folder cụ thể nhưng không được quyền chỉnh sửa mọi item trong workspace. Nên ưu tiên gì?**
 
-A. OneLake role bị cache 24 giờ  
-B. Contributor là elevated workspace role và bypass OneLake RLS/CLS/OLS  
-C. Sensitivity label tự cấp quyền  
-D. Endorsement Certified mở khóa dữ liệu
-
-<details><summary>Đáp án</summary>
-
-**B.** Muốn kiểm thử granular security, dùng Viewer hoặc chỉ item-level read permissions.
-</details>
-
+→ Nếu item/path hỗ trợ, cân nhắc **OneLake granular ReadWrite** thay vì cấp Contributor toàn workspace.
 
 ---
 
 ## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
 
-- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
-- [OneLake security roles](https://learn.microsoft.com/en-us/fabric/onelake/security/create-manage-roles)
-- [OneLake RLS](https://learn.microsoft.com/en-us/fabric/onelake/security/row-level-security)
-- [OneLake SQL endpoint behavior](https://learn.microsoft.com/en-us/fabric/onelake/security/sql-analytics-endpoint-onelake-security)
+- [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 - [Fabric permission model](https://learn.microsoft.com/en-us/fabric/security/permission-model)
+- [OneLake security overview](https://learn.microsoft.com/en-us/fabric/onelake/security/onelake-security-overview)
+- [OneLake SQL analytics endpoint security](https://learn.microsoft.com/en-us/fabric/onelake/security/sql-analytics-endpoint-onelake-security)
+- [OneLake RLS](https://learn.microsoft.com/en-us/fabric/onelake/security/row-level-security)
+- [OneLake CLS](https://learn.microsoft.com/en-us/fabric/onelake/security/column-level-security)
+- [OneLake security best practices](https://learn.microsoft.com/en-us/fabric/onelake/security/best-practices-secure-data-in-onelake)
+- [Dynamic Data Masking](https://learn.microsoft.com/en-us/fabric/data-warehouse/dynamic-data-masking)
+- [Information protection](https://learn.microsoft.com/en-us/fabric/governance/information-protection)
+- [Protection policies](https://learn.microsoft.com/en-us/fabric/governance/protection-policies-overview)
+- [Endorsement](https://learn.microsoft.com/en-us/fabric/governance/endorsement-overview)
+- [Audit logs](https://learn.microsoft.com/en-us/fabric/admin/track-user-activities)
 
 ---
 

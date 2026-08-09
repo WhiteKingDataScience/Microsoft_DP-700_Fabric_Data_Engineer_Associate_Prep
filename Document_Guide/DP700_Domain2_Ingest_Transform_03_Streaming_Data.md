@@ -3,7 +3,7 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 04/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
 > **Skills measured as of July 21, 2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
@@ -26,55 +26,33 @@
 
 ## 1. Choose an Appropriate Streaming Engine
 
-### 1.1. Tổng quan Streaming trong Microsoft Fabric
+### 1.1. Ba lựa chọn execution cần phân biệt
 
-Microsoft Fabric cung cấp hai nền tảng chính cho xử lý streaming:
+| Lựa chọn | Điểm mạnh | Scenario |
+|---|---|---|
+| Eventstream + Eventhouse | low-code routing + KQL analytics | dashboard, alert, IoT/log |
+| Spark Structured Streaming micro-batch | broad transforms + Delta | streaming ETL, stateful processing |
+| Spark Structured Streaming Real-time Mode | ultra-low-latency Spark | Runtime 2.0+, supported topology |
 
-| Nền tảng | Thành phần | Mô tả |
-|----------|-----------|--------|
-| **Real-Time Intelligence** | Eventstream + Eventhouse (KQL) | Xử lý streaming thuần túy, latency thấp (giây) |
-| **Data Engineering** | Spark Structured Streaming | Micro-batch streaming, latency trung bình (phút) |
+> [!IMPORTANT]
+> **Real-time Mode là cập nhật 2026:** Fabric Runtime 2.0 (Spark 4.1)+ hỗ trợ `Trigger.RealTime`. Không còn đúng nếu học “Spark Structured Streaming luôn micro-batch”.
 
-### 1.2. Ma trận quyết định chọn Streaming Engine
+### 1.2. Decision framework
 
-| Tiêu chí | **Eventstream + Eventhouse** | **Spark Structured Streaming** |
-|----------|:----------------------------|:------------------------------|
-| **Latency** | Low latency, thường ở mức giây tùy nguồn/transform/destination | Từ giây đến phút tùy trigger, state, load và checkpoint |
-| **Ngôn ngữ** | KQL | PySpark |
-| **Đích đến chính** | Eventhouse (KQL Database) | Lakehouse (Delta Table) |
-| **Transformation** | SQL operator trong Eventstream | Full PySpark transformations |
-| **Windowing** | SQL operator + KQL | PySpark window/watermark |
-| **Use Case** | IoT dashboards, alerting, log monitoring | Streaming ETL, near-real-time data lake |
-| **Cost model** | Eventhouse CU | Spark CU |
-| **Complexity** | Thấp (UI-driven) | Trung bình (code-first) |
-| **Stateful processing** | KQL/Eventhouse hỗ trợ aggregation, materialized views, update policies; mô hình khác Spark | Spark state store cho window, dedupe, joins và custom state |
-| **Integration** | Data Activator (alerting) | Delta Lake (downstream analytics) |
-
-### 1.3. Quy tắc chọn Engine
-
-```
-Yêu cầu streaming của bạn là gì?
-│
-├── Cần sub-second latency cho dashboard/alerting?
-│   └── ✅ EVENTSTREAM → EVENTHOUSE (KQL)
-│
-├── Cần streaming ETL vào Delta Lake cho analytics?
-│   └── ✅ SPARK STRUCTURED STREAMING
-│
-├── Cần xử lý phức tạp (stateful joins, ML scoring)?
-│   └── ✅ SPARK STRUCTURED STREAMING
-│
-├── Cần low-code, nhanh setup?
-│   └── ✅ EVENTSTREAM (UI configuration)
-│
-└── Cần kết hợp cả real-time monitoring VÀ Delta Lake?
-    └── ✅ EVENTSTREAM với MULTIPLE DESTINATIONS
-         (Eventhouse + Lakehouse)
+```text
+Low-code routing/dashboard/alert? → Eventstream + Eventhouse (+ Activator)
+Complex Spark/stateful/Delta ETL? → Structured Streaming
+Scheduled backlog then stop?      → availableNow + checkpoint
+Ultra-low-latency but must Spark? → Real-time Mode, verify supported topology
+Data already in OneLake for KQL?  → shortcut; frequent query → acceleration
 ```
 
-> 📌 **Điểm thi**: Eventstream có thể **fan-out** — 1 nguồn dữ liệu gửi tới **nhiều đích đến** cùng lúc (Eventhouse, Lakehouse, Custom endpoint).
-
----
+### 1.3. Trade-off
+- Eventstream tối ưu event ingestion/routing và no-code operators.
+- Eventhouse tối ưu KQL/time-series/log analytics.
+- Spark tối ưu custom/distributed processing.
+- Không coi `sub-second` là SLA mặc định cho mọi topology.
+- Real-time Mode support surface hẹp hơn micro-batch trong preview.
 
 ## 2. Choose Between Native Tables and OneLake Shortcuts in Real-Time Intelligence
 
@@ -269,8 +247,9 @@ Eventstream là thành phần trong Fabric **Real-Time Intelligence** dùng đ�
 | **Eventhouse** | KQL Database table | Real-time analytics, dashboards |
 | **Lakehouse** | Delta table | Streaming ETL, data lake |
 | **Custom App** | HTTP endpoint | External processing |
-| **Reflex (Data Activator)** | Alert trigger | Real-time alerting |
-| **Derived Eventstream** | Another Eventstream | Stream chaining, fan-out |
+| **Activator** | Theo dõi điều kiện và hành động/alert | Real-time action |
+| **Derived stream** | Stream logic sau transform | Chia sẻ/fan-out qua Real-Time hub |
+| **Spark Notebook (Preview)** | Khởi chạy Structured Streaming trong notebook đích | Custom Spark processing |
 
 ### 4.6. Ví dụ End-to-End Eventstream Setup
 
@@ -295,145 +274,126 @@ Eventstream: IoT_Sensor_Stream
 ├── Destination 2: Lakehouse → bronze.iot_sensor_data
 │   (Cho historical analytics)
 │
-└── Destination 3: Reflex (Data Activator)
+└── Destination 3: Activator
     Trigger: Temperature > 80 → Send email alert
 ```
 
 > 📌 **Điểm thi**: Eventstream hỗ trợ **nhiều destinations** cùng lúc (fan-out pattern). Một event có thể đồng thời ghi vào Eventhouse VÀ Lakehouse VÀ trigger alert.
 
+> [!NOTE]
+> Eventstream mới dùng **Enhanced capabilities** mặc định. Supported destinations đã mở rộng, gồm cả **Spark Notebook (Preview)**; với câu hỏi thi hãy chọn destination theo requirement thay vì học một danh sách cứng.
+
 ---
 
 ## 5. Process Data by Using Spark Structured Streaming
 
-### 5.1. Khái niệm
+### 5.1. Core model
+Structured Streaming = **source → transformations → sink**, với always-on hoặc scheduled incremental.
 
-Spark Structured Streaming trong Fabric xử lý dữ liệu streaming theo mô hình **micro-batch** — dữ liệu được xử lý thành các batch nhỏ tại intervals cố định.
+### 5.2. Sources Fabric tài liệu hóa
+Files (`text/csv/json/parquet/orc`), Delta, Kafka, Azure Event Hubs, Fabric Eventstream và `rate` cho test.
 
-### 5.2. Nguồn dữ liệu Streaming trong Spark
+> [!WARNING]
+> `cloudFiles` / Databricks Auto Loader không phải API Fabric Spark được Microsoft Learn tài liệu hóa. Với DP-700, dùng built-in file source.
 
-| Source | Format | Mô tả |
-|--------|--------|--------|
-| **Azure Event Hubs** | `eventhubs` | Streaming events |
-| **Kafka** | `kafka` | Apache Kafka topics |
-| **Delta Table** | `delta` | Reads new rows appended to Delta table |
-| **File-based** | `cloudFiles` (Auto Loader) | Monitors folder for new files |
-
-### 5.3. Ví dụ đầy đủ: Event Hub → Delta Lake
+### 5.3. File source → Delta
 
 ```python
-from pyspark.sql.functions import *
 from pyspark.sql.types import *
+from pyspark.sql import functions as F
 
-# === STEP 1: Cấu hình Event Hub Connection ===
-ehConf = {
-    "eventhubs.connectionString": sc._jvm.org.apache.spark.eventhubs
-        .EventHubsUtils.encrypt("<event-hub-connection-string>"),
-    "eventhubs.consumerGroup": "$Default",
-    "eventhubs.startingPosition": '{"offset":"-1","seqNo":-1,"enqueuedTime":null,"isInclusive":true}'
-}
-
-# === STEP 2: ReadStream ===
-raw_stream = spark.readStream \
-    .format("eventhubs") \
-    .options(**ehConf) \
-    .load()
-
-# === STEP 3: Parse & Transform ===
-schema = StructType([
-    StructField("DeviceId", StringType()),
-    StructField("Temperature", DoubleType()),
-    StructField("Humidity", DoubleType()),
-    StructField("EventTime", TimestampType())
+schema=StructType([
+ StructField('DeviceId',StringType()),
+ StructField('Temperature',DoubleType()),
+ StructField('Humidity',DoubleType()),
+ StructField('EventTime',TimestampType())
 ])
 
-parsed_stream = raw_stream \
-    .select(
-        from_json(col("body").cast("string"), schema).alias("data"),
-        col("enqueuedTime").alias("_enqueued_time")
-    ) \
-    .select("data.*", "_enqueued_time") \
-    .withColumn("_processed_time", current_timestamp())
+stream=(spark.readStream.schema(schema).format('json')
+        .option('maxFilesPerTrigger',100)
+        .load('Files/incoming/sensors'))
 
-# === STEP 4: WriteStream ===
-query = parsed_stream.writeStream \
-    .format("delta") \
-    .outputMode("append") \
-    .option("checkpointLocation", "/lakehouse/default/checkpoint/iot_stream") \
-    .trigger(availableNow=True) \
-    .toTable("bronze.iot_sensor_events")
-
-query.awaitTermination()
+q=(stream.writeStream.format('delta').outputMode('append')
+   .option('checkpointLocation','Files/checkpoints/sensors')
+   .trigger(availableNow=True)
+   .toTable('bronze_sensors'))
+q.awaitTermination()
 ```
 
-### 5.4. Auto Loader (Cloud Files)
-
-Auto Loader monitors a folder và tự động ingests new files.
+### 5.4. Event Hubs → Delta
 
 ```python
-# Auto Loader: tự động detect new files
-df_stream = spark.readStream \
-    .format("cloudFiles") \
-    .option("cloudFiles.format", "json") \
-    .option("cloudFiles.schemaLocation", "/lakehouse/default/_schemas/sensor_data") \
-    .load("abfss://raw@storage.dfs.core.windows.net/sensor_data/")
+import pyspark.sql.functions as F
+from pyspark.sql.types import *
 
-df_stream.writeStream \
-    .format("delta") \
-    .option("checkpointLocation", "/lakehouse/default/checkpoint/autoloader") \
-    .trigger(availableNow=True) \
-    .toTable("bronze.sensor_files")
+raw=(spark.readStream.format('eventhubs').options(**ehConf).load())
+parsed=(raw.withColumn('bodyText',F.col('body').cast('string'))
+        .select(F.from_json('bodyText',schema).alias('e'))
+        .select('e.*'))
+
+q=(parsed.writeStream.format('delta').outputMode('append')
+   .option('checkpointLocation','Files/checkpoints/eventhub')
+   .toTable('bronze_iot'))
+q.awaitTermination()
 ```
 
-### 5.5. Output Modes
+### 5.5. Output modes
+- `append`: new/finalized rows.
+- `update`: changed rows; **Real-time Mode hiện yêu cầu update**.
+- `complete`: toàn bộ result table ở mỗi trigger với supported aggregation.
 
-| Mode | Mô tả | Khi nào dùng |
-|------|--------|-------------|
-| **append** | Chỉ ghi rows mới | Raw event ingestion (phổ biến nhất) |
-| **complete** | Ghi lại toàn bộ result mỗi batch | Aggregations (mỗi batch = full result) |
-| **update** | Ghi chỉ rows đã thay đổi | Aggregations (chỉ updated rows) |
+Không học “có aggregation = complete”; hợp lệ còn phụ thuộc query plan/watermark/sink.
 
-> 📌 **Điểm thi**: 
-> - `append` → Dùng khi KHÔNG có aggregation
-> - `complete` → Dùng khi có aggregation (mọi micro-batch output toàn bộ kết quả)
-> - `update` → Dùng khi có aggregation (chỉ output rows thay đổi)
-
-### 5.6. Stateful Operations — Watermark
+### 5.6. Watermark — hiểu đúng
+Watermark được tính từ **max event time đã thấy - delay threshold**; records older than current watermark có thể bị drop ở stateful operator.
 
 ```python
-from pyspark.sql.functions import avg, count, window
-
-windowed_counts = (
-    parsed_stream
-    .withWatermark("EventTime", "10 minutes")
-    .groupBy(window("EventTime", "5 minutes"), "DeviceId")
-    .agg(
-        avg("Temperature").alias("AvgTemp"),
-        count("*").alias("EventCount"),
-    )
-)
-
-query = (
-    windowed_counts.writeStream
-    .format("delta")
-    .outputMode("append")
-    .option("checkpointLocation", "Files/checkpoints/windowed_iot")
-    .trigger(processingTime="1 minute")
-    .toTable("silver.iot_aggregated")
-)
+from pyspark.sql.functions import window,avg,count
+agg=(parsed.withWatermark('EventTime','10 minutes')
+     .groupBy(window('EventTime','5 minutes'),'DeviceId')
+     .agg(avg('Temperature').alias('AvgTemp'),count('*').alias('Events')))
 ```
 
-### 5.7. Production Best Practices (2026)
+### 5.7. `foreachBatch` + idempotent MERGE
 
-| Practice | Mô tả |
-|----------|--------|
-| **Spark Job Definitions** | Dùng cho production thay vì notebooks → auto retry, better monitoring |
-| **RocksDB State Store** | Enable cho stateful operations → giảm JVM heap pressure |
-| **maxFilesPerTrigger** | Giới hạn files mỗi micro-batch → tránh memory overflow |
-| **maxBytesPerTrigger** | Giới hạn bytes mỗi micro-batch → stable performance |
-| **Unique checkpoints** | Mỗi streaming query = 1 checkpoint duy nhất |
-| **availableNow trigger** | Ưu tiên cho scheduled jobs → tiết kiệm cost |
+```python
+from delta.tables import DeltaTable
 
----
+def upsert(batch_df,batch_id):
+    tgt=DeltaTable.forName(spark,'silver_device')
+    (tgt.alias('t').merge(batch_df.alias('s'),'t.DeviceId=s.DeviceId')
+     .whenMatchedUpdateAll(condition='s.EventTime >= t.EventTime')
+     .whenNotMatchedInsertAll().execute())
+
+q=(parsed.writeStream.foreachBatch(upsert)
+   .option('checkpointLocation','Files/checkpoints/device-upsert')
+   .trigger(availableNow=True).start())
+q.awaitTermination()
+```
+
+### 5.8. Checkpointing
+- Một query → một durable checkpoint.
+- Checkpoint giữ offsets/progress/state.
+- Delta + supported sources/sinks giúp fault-tolerant exactly-once processing semantics.
+- `foreachBatch`/custom sink có thể retry → idempotent logic.
+
+### 5.9. RocksDB state store
+
+```python
+spark.conf.set('spark.sql.streaming.stateStore.providerClass',
+ 'org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider')
+spark.conf.set('spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled',True)
+```
+
+Hữu ích cho window, dedup, stream-stream join và state lớn.
+
+### 5.10. Real-time Mode (2026)
+- Runtime 2.0 / Spark 4.1+.
+- Long-running tasks, ultra-low-latency.
+- Output mode hiện `update`.
+- PySpark preview chưa expose trigger trực tiếp qua `.trigger()`; Microsoft dùng JVM API trong example.
+- Source/sink/operator support hẹp hơn micro-batch.
+- Scheduled lakehouse ingestion thường chọn `availableNow`, không chọn Real-time Mode chỉ vì “nhanh hơn”.
 
 ## 6. Process Data by Using KQL
 
@@ -451,10 +411,11 @@ KQL (Kusto Query Language) là ngôn ngữ native của Eventhouse, tối ưu ch
 
 ```kql
 // Streaming ingestion policy (enable real-time availability)
-.alter table SensorData policy streamingingestion enable
+.alter table SensorData policy streamingingestion
+'{"IsEnabled": true}'
 
 // Ingestion mapping
-.create table SensorData ingestion json mapping 'SensorMapping' 
+.create-or-alter table SensorData ingestion json mapping "SensorMapping" 
 '[{"column":"DeviceId","Properties":{"Path":"$.deviceId"}},{"column":"Temperature","Properties":{"Path":"$.temperature"}},{"column":"EventTime","Properties":{"Path":"$.timestamp"}}]'
 ```
 
@@ -864,7 +825,7 @@ D. Sliding Window with 15-minute duration
 
 **How should you handle the late-arriving events?**
 
-A. Use `.withWatermark("EventTime", "10 minutes")` to accept events up to 10 minutes late  
+A. Use `.withWatermark("EventTime", "10 minutes")` để giới hạn state bằng event-time watermark  
 B. Increase the tumbling window size to 15 minutes  
 C. Use `trigger(processingTime="10 minutes")` to wait for late data  
 D. Remove the windowed aggregation and use batch processing instead
@@ -872,7 +833,7 @@ D. Remove the windowed aggregation and use batch processing instead
 **✅ Correct Answer: A**
 
 > **Giải thích**:
-> - **(A) Đúng** — `withWatermark` cho phép Spark chấp nhận data muộn tối đa khoảng thời gian chỉ định (10 phút). Events đến trong vòng 10 phút so với watermark vẫn được bao gồm trong window aggregation. Events đến muộn hơn 10 phút sẽ bị drop.
+> - **(A) Đúng** — `withWatermark` dùng max event time đã thấy để tính current watermark. Với stateful operator, record cũ hơn watermark có thể bị drop; không phải phép so sánh đơn giản với wall-clock.
 > - **(B) Sai** — Tăng window size thay đổi business logic, không giải quyết vấn đề late data.
 > - **(C) Sai** — `processingTime` chỉ là khoảng cách giữa các micro-batches, không liên quan tới late data handling.
 > - **(D) Sai** — Loại bỏ streaming không cần thiết khi watermark giải quyết được vấn đề.
@@ -935,7 +896,7 @@ D. OneLake shortcut to Amazon S3
 **✅ Correct Answer: C**
 
 > **Giải thích**:
-> - **(C) Đúng** — Native table + streaming ingestion là lựa chọn ưu tiên khi cần query latency thấp nhất trong Eventhouse và chấp nhận ingest/cached copy. Data được physically ingested, indexed, và available cho query trong giây. Đây là lựa chọn duy nhất cho 1M events/sec + sub-second query requirement.
+> - **(C) Đúng** — Native table + streaming ingestion là lựa chọn ưu tiên khi cần query latency thấp nhất trong Eventhouse và chấp nhận ingest/cached copy. Data được physically ingested, indexed, và available cho query trong giây. Đây thường là lựa chọn ưu tiên khi cần native Kusto ingestion/indexing và query latency thấp; throughput/latency phải sizing theo event size, partitions và capacity.
 > - **(A) Sai** — Standard shortcut không có indexing, latency cao.
 > - **(B) Sai** — Accelerated shortcut tốt nhưng không bằng native table, và không phù hợp cho high-velocity streaming (shortcuts designed cho batch data).
 > - **(D) Sai** — Shortcut tới S3 có network latency cao nhất.
@@ -1021,13 +982,13 @@ D. Use Spark Structured Streaming instead of Eventstream
 **Options**: A. Eventstream   B. Spark Structured Streaming   C. Eventhouse + KQL Update Policy   D. Eventhouse + Real-Time Dashboard
 
 **✅ Correct Answers:**
-1. **D** — Eventhouse + Real-Time Dashboard (sub-second KQL queries)
+1. **D** — Eventhouse + Real-Time Dashboard (low-latency KQL queries)
 2. **B** — Spark Structured Streaming (streaming ETL → Delta Lake)
 3. **A** — Eventstream (low-code UI for routing/filtering)
 4. **C** — Eventhouse + KQL Update Policy (auto-transform on ingestion)
 
 > **Giải thích**:
-> - Scenario 1: Real-Time Dashboard + Eventhouse cung cấp sub-second query cho live monitoring.
+> - Scenario 1: Real-Time Dashboard + Eventhouse phù hợp live monitoring với low-latency KQL; không coi sub-second là SLA mặc định.
 > - Scenario 2: Spark Structured Streaming là công cụ chuẩn cho streaming ETL vào Delta Lake.
 > - Scenario 3: Eventstream có UI low-code cho routing, filtering, splitting streams.
 > - Scenario 4: KQL Update Policy tự động transform data khi ingestion xảy ra.
@@ -1123,15 +1084,6 @@ D. Import vào semantic model
 **B.** Query acceleration cache phạm vi dữ liệu cần query mà vẫn giữ source of truth trong OneLake.
 </details>
 
-
----
-
-## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
-
-- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
-- [Query acceleration](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/query-acceleration-overview)
-- [Structured Streaming best practices](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-best-practices)
-- [OneLake shortcuts in KQL database](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/onelake-shortcuts)
 
 ---
 
@@ -1275,7 +1227,7 @@ stream = (
 # ═══════════════════════════════════════════════════
 agg = (
     stream
-    # Watermark: event đến sau 2 phút kể từ EventTime sẽ bị bỏ qua
+    # Watermark = max EventTime đã thấy - 2 phút; record cũ hơn current watermark có thể bị loại
     .withWatermark("EventTime", "2 minutes")
     # Tumbling window 1 phút per DeviceId
     .groupBy(window("EventTime", "1 minute"), "DeviceId")
@@ -1300,7 +1252,7 @@ query = (
 ```
 
 **Điểm cần hiểu:**
-- `withWatermark` → giới hạn state size, cho phép late data trong threshold
+- `withWatermark` → giới hạn state size và bounded lateness theo event-time watermark
 - `outputMode("append")` → chỉ output khi window được finalized (sau watermark)
 - `checkpointLocation` → đảm bảo fault-tolerance, rerun tiếp tục từ chỗ dừng
 
@@ -1371,4 +1323,83 @@ Telemetry
 
 > [!TIP]
 > Tham khảo KQL documentation: [Kusto Query Language overview](https://learn.microsoft.com/en-us/kusto/query/)
+
+---
+
+## 12. CODE CHEAT SHEET — STREAMING/KQL
+
+```kusto
+Telemetry
+| where Timestamp > ago(1h)
+| extend Temp=todouble(Temperature)
+| project Timestamp,DeviceId,Site,Temp
+| summarize AvgTemp=avg(Temp),MaxTemp=max(Temp),Events=count()
+  by Site,DeviceId,bin(Timestamp,5m)
+| order by Timestamp desc
+```
+
+```kusto
+DeviceStatus
+| summarize arg_max(Timestamp, *) by DeviceId
+```
+
+```kusto
+RawEvents
+| extend p=parse_json(Body)
+| extend DeviceId=tostring(p.deviceId), Metrics=p.metrics
+| mv-expand Metrics
+| project Timestamp,DeviceId,Metric=tostring(Metrics.name),Value=todouble(Metrics.value)
+```
+
+```kusto
+Telemetry
+| join kind=leftouter (DeviceReference | project DeviceId,Site,DeviceType) on DeviceId
+| summarize AvgTemp=avg(Temperature) by Site,DeviceType
+```
+
+**Eventstream SQL operator:**
+```sql
+SELECT System.Timestamp AS WindowEnd, DeviceId, AVG(Temperature) AS AvgTemp
+INTO output
+FROM input
+GROUP BY DeviceId, TumblingWindow(minute,5)
+```
+
+```sql
+SELECT System.Timestamp AS WindowEnd, UserId, COUNT(*) AS OrderCount
+INTO output
+FROM input
+GROUP BY UserId, HoppingWindow(minute,10,2)
+HAVING COUNT(*)>20
+```
+
+```text
+Tumbling = fixed non-overlap
+Hopping  = fixed overlap (size + hop)
+Sliding  = event-driven
+Session  = inactivity gap
+Snapshot = same timestamp
+KQL bin() = fixed bucket cho summarize, không phải toàn bộ Stream Analytics window semantics
+```
+
+---
+
+## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
+
+- [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [Structured Streaming overview](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview)
+- [Structured Streaming best practices](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-best-practices)
+- [Real-time Mode](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-real-time-mode)
+- [Eventstream overview](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/event-streams/overview)
+- [Eventstream SQL operator](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/event-streams/process-events-using-sql-code-editor)
+- [Query acceleration](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/query-acceleration-overview)
+- [KQL update policy](https://learn.microsoft.com/en-us/kusto/management/update-policy?view=microsoft-fabric)
+
+
+- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [Query acceleration](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/query-acceleration-overview)
+- [Structured Streaming best practices](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-best-practices)
+- [OneLake shortcuts in KQL database](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/onelake-shortcuts)
+
+---
 

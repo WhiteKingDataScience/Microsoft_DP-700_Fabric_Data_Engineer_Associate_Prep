@@ -3,7 +3,7 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 04/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
 > **Skills measured as of July 21, 2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
@@ -50,11 +50,11 @@ Microsoft Fabric khuyến nghị sử dụng kiến trúc **Medallion** gồm 3 
 Full load là quá trình **tải lại toàn bộ dữ liệu** từ nguồn vào đích mỗi lần pipeline chạy. Dữ liệu cũ bị ghi đè hoặc thay thế hoàn toàn.
 
 #### Khi nào sử dụng Full Load?
-- Dữ liệu nguồn nhỏ (< vài triệu rows)
-- Không có cột watermark (Modified Date, RowVersion) trong nguồn
-- Nguồn dữ liệu là file tĩnh (CSV, Excel, flat file)
-- Bảng dimension nhỏ thay đổi toàn bộ
-- Lần khởi tạo (initial load) đầu tiên
+- **Initial load / bootstrap** lần đầu.
+- Dataset đủ nhỏ để tải lại toàn bộ trong SLA và chi phí chấp nhận được; **không dùng một ngưỡng row cố định**.
+- Nguồn cung cấp full snapshot mỗi lần và không có reliable change signal.
+- Bảng lookup/dimension nhỏ, full refresh đơn giản hơn incremental.
+- Cần phản ánh cả DELETE nhưng nguồn không có CDC/change tracking; full snapshot + replace có thể phù hợp hơn.
 
 #### Cách triển khai trong Fabric
 
@@ -89,134 +89,138 @@ df_with_audit.write.format("delta") \
 
 ### 2.2. Incremental Load (Tải gia tăng)
 
-#### Khái niệm
-Incremental load chỉ **tải dữ liệu mới hoặc đã thay đổi** kể từ lần chạy cuối cùng, giúp giảm thời gian xử lý và chi phí compute.
+Incremental load chỉ xử lý dữ liệu **mới hoặc thay đổi** kể từ mốc thành công trước. Một design tốt phải đồng thời giải quyết **state, retry, duplicate, stale update và delete**.
 
-#### Ba phương pháp Incremental Load chính
+#### 2.2.1. Mental model bắt buộc
 
-##### A. Watermark-based (High-Water Mark)
+| Khái niệm | Trả lời câu hỏi nào? | DELETE? |
+|---|---|---|
+| **Watermark** | Đọc record nào kể từ lần trước? | Không tự nhiên |
+| **CDC** | Operation nào đã xảy ra: insert/update/delete? | Có |
+| **MERGE/Upsert** | Ghi change set vào target thế nào? | Chỉ khi có delete signal + logic delete |
+| **SCD Type 2** | Có cần giữ lịch sử version không? | Có thể soft-delete/expire |
 
-**Nguyên lý**: Sử dụng một cột "watermark" (thường là `ModifiedDate` hoặc `RowVersion`) để xác định dữ liệu mới.
+> [!IMPORTANT]
+> **Watermark/CDC là read pattern; MERGE/SCD là write pattern.** Đừng coi chúng là các đáp án thay thế ngang hàng trong mọi scenario.
 
-**Quy trình**:
-1. **Lookup**: Đọc giá trị watermark cao nhất từ bảng control
-2. **Filter**: Truy vấn nguồn chỉ lấy dữ liệu có watermark > giá trị đã lưu
-3. **Load**: Ghi dữ liệu mới vào đích
-4. **Update**: Cập nhật giá trị watermark mới vào bảng control
+#### A. Watermark pattern — OldWatermark + NewWatermark
 
-**Ví dụ triển khai bằng Pipeline**:
-```
-Pipeline:
-  ├── Lookup Activity: Đọc LastWatermark từ control_table
-  ├── Copy Activity: 
-  │     Source Query: SELECT * FROM Orders WHERE ModifiedDate > @{activity('Lookup').output.firstRow.LastWatermark}
-  │     Destination: Lakehouse bronze.orders (Append mode)
-  └── Stored Procedure / Script Activity: 
-        UPDATE control_table SET LastWatermark = @{activity('Copy').output.MaxValue}
-```
+Pattern an toàn:
 
-**Ví dụ triển khai bằng Notebook**:
-```python
-from pyspark.sql.functions import max, col, current_timestamp, lit
-
-# 1. Đọc watermark từ control table
-watermark_df = spark.sql("SELECT MAX(LastWatermark) as wm FROM control.watermarks WHERE TableName = 'Orders'")
-last_watermark = watermark_df.collect()[0]['wm']
-
-# 2. Đọc dữ liệu mới từ nguồn
-new_data = spark.read.format("jdbc") \
-    .option("url", jdbc_url) \
-    .option("query", f"SELECT * FROM Orders WHERE ModifiedDate > '{last_watermark}'") \
-    .load()
-
-# 3. Ghi vào Bronze (append)
-new_data.withColumn("_ingestion_timestamp", current_timestamp()) \
-    .write.format("delta") \
-    .mode("append") \
-    .saveAsTable("bronze.orders")
-
-# 4. Cập nhật watermark
-new_max = new_data.agg(max("ModifiedDate")).collect()[0][0]
-spark.sql(f"UPDATE control.watermarks SET LastWatermark = '{new_max}' WHERE TableName = 'Orders'")
+```text
+1. Lookup OldWatermark từ control table
+2. Lookup NewWatermark = MAX(ModifiedDate) tại SOURCE
+3. Copy WHERE ModifiedDate > OldWatermark
+          AND ModifiedDate <= NewWatermark
+4. Dedup + MERGE/Upsert vào target
+5. Chỉ sau SUCCESS mới commit control table = NewWatermark
 ```
 
-> 📌 **Điểm thi quan trọng**: Watermark pattern **KHÔNG** bắt được hàng bị DELETE từ nguồn. Nếu cần tracking deletes → dùng CDC hoặc Mirroring.
+Cận trên `<= NewWatermark` tạo một “cut” nhất quán; source thay đổi trong lúc run sẽ được xử lý ở lần sau.
 
-##### B. Change Data Capture (CDC)
+**T-SQL control table:**
 
-**Nguyên lý**: Nguồn dữ liệu tự động phát hiện và ghi lại mọi thay đổi (INSERT, UPDATE, DELETE) vào một change log.
-
-**Triển khai trong Fabric**:
-
-- **Copy Job với CDC mode**: Fabric Data Factory hỗ trợ CDC natively cho:
-  - Azure SQL Database
-  - SQL Server (2016–2025)
-  - Snowflake
-  - Google BigQuery
-  - SAP (qua Datasphere)
-
-```
-Copy Job Configuration:
-  ├── Source: Azure SQL Database (CDC enabled)
-  ├── Change Tracking: CDC
-  ├── Destination: Lakehouse Table
-  └── Write Mode: Merge (auto upsert/delete)
-```
-
-**Ưu điểm CDC**:
-- Bắt được cả DELETE operations
-- Không cần maintain watermark table
-- Tự động merge vào bảng đích (upsert)
-
-##### C. MERGE INTO Pattern
-
-**Nguyên lý**: Sử dụng lệnh SQL `MERGE INTO` để thực hiện "upsert" — INSERT nếu row mới, UPDATE nếu đã tồn tại.
-
-**Ví dụ SQL trong Fabric Warehouse**:
 ```sql
-MERGE INTO silver.customers AS target
-USING bronze.customers_staging AS source
-    ON target.CustomerID = source.CustomerID
-WHEN MATCHED AND source.ModifiedDate > target.ModifiedDate THEN
-    UPDATE SET 
-        target.CustomerName = source.CustomerName,
-        target.Email = source.Email,
-        target.ModifiedDate = source.ModifiedDate,
-        target._updated_at = GETDATE()
-WHEN NOT MATCHED THEN
-    INSERT (CustomerID, CustomerName, Email, ModifiedDate, _created_at)
-    VALUES (source.CustomerID, source.CustomerName, source.Email, source.ModifiedDate, GETDATE());
+CREATE TABLE dbo.LoadWatermark (
+    TableName varchar(128) NOT NULL,
+    LastWatermark datetime2(6) NULL
+);
+
+SELECT LastWatermark
+FROM dbo.LoadWatermark
+WHERE TableName = 'Orders';
+
+SELECT MAX(ModifiedDate) AS NewWatermark
+FROM dbo.Orders;
+
+SELECT *
+FROM dbo.Orders
+WHERE ModifiedDate > @OldWatermark
+  AND ModifiedDate <= @NewWatermark;
 ```
 
-**Ví dụ PySpark trong Lakehouse Notebook**:
+**PySpark dedup + idempotent MERGE:**
+
+```python
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+from delta.tables import DeltaTable
+
+incoming = spark.table('bronze.orders_increment')
+w = Window.partitionBy('OrderId').orderBy(F.col('ModifiedDate').desc())
+latest = (incoming
+          .withColumn('_rn', F.row_number().over(w))
+          .filter('_rn = 1')
+          .drop('_rn'))
+
+target = DeltaTable.forName(spark, 'silver.orders')
+(target.alias('t')
+ .merge(latest.alias('s'), 't.OrderId = s.OrderId')
+ .whenMatchedUpdateAll(condition='s.ModifiedDate >= t.ModifiedDate')
+ .whenNotMatchedInsertAll()
+ .execute())
+```
+
+> [!WARNING]
+> Watermark không tự phát hiện **hard DELETE**. Nếu DELETE quan trọng, ưu tiên CDC/Mirroring hoặc soft-delete/snapshot reconciliation.
+
+#### B. Copy Job incremental — Fabric quản lý state
+
+Copy Job có **Full copy** và **Incremental copy**. Với incremental mode, Fabric quản lý mốc của **last successful run**; failed run không advance state. Copy Job hỗ trợ watermark-based incremental và CDC-based incremental khi connector hỗ trợ.
+
+Update methods hiện gồm **Append, Overwrite, Merge**; với supported CDC paths có **SCD Type 2 (Preview)**. Copy Job còn có audit columns và auto-partitioning (Preview) cho một số connector.
+
+#### C. CDC
+
+CDC phù hợp khi cần INSERT + UPDATE + DELETE và source/connector hỗ trợ. Trong Copy Job:
+
+- **Merge / SCD Type 1**: target giữ current state; source delete có thể xóa target row.
+- **SCD Type 2 (Preview)**: update tạo version mới; delete expire/soft-delete current version.
+
+Support matrix thay đổi nhanh. Tính đến 08/2026 Microsoft tài liệu hóa CDC cho các nguồn như Azure SQL DB, Azure SQL MI, Fabric Warehouse, Fabric Lakehouse table (Preview), Google BigQuery (Preview), SQL Server on-prem, Oracle (Preview), SAP Datasphere outbound; Snowflake có tutorial CDC riêng.
+
+#### D. MERGE / Upsert
+
+**Warehouse / T-SQL:**
+
+```sql
+MERGE INTO dbo.Customer AS T
+USING dbo.CustomerStage AS S
+ON T.CustomerId = S.CustomerId
+WHEN MATCHED AND S.ModifiedDate >= T.ModifiedDate THEN
+  UPDATE SET
+    CustomerName = S.CustomerName,
+    Email = S.Email,
+    ModifiedDate = S.ModifiedDate
+WHEN NOT MATCHED BY TARGET THEN
+  INSERT (CustomerId, CustomerName, Email, ModifiedDate)
+  VALUES (S.CustomerId, S.CustomerName, S.Email, S.ModifiedDate);
+```
+
+**Lakehouse / Delta PySpark:**
+
 ```python
 from delta.tables import DeltaTable
 
-# Đọc dữ liệu mới (staging)
-staging_df = spark.table("bronze.customers_staging")
+target = DeltaTable.forName(spark, 'silver.customer')
+source = spark.table('bronze.customer_stage')
 
-# Merge vào Silver
-silver_table = DeltaTable.forName(spark, "silver.customers")
-
-silver_table.alias("target").merge(
-    staging_df.alias("source"),
-    "target.CustomerID = source.CustomerID"
-).whenMatchedUpdate(
-    condition="source.ModifiedDate > target.ModifiedDate",
-    set={
-        "CustomerName": "source.CustomerName",
-        "Email": "source.Email",
-        "ModifiedDate": "source.ModifiedDate",
-        "_updated_at": "current_timestamp()"
-    }
-).whenNotMatchedInsertAll() \
- .execute()
-
-# Tối ưu sau MERGE
-spark.sql("OPTIMIZE silver.customers")
+(target.alias('t')
+ .merge(source.alias('s'), 't.CustomerId = s.CustomerId')
+ .whenMatchedUpdateAll(condition='s.ModifiedDate >= t.ModifiedDate')
+ .whenNotMatchedInsertAll()
+ .execute())
 ```
 
-> 📌 **Best Practice**: Luôn chạy `OPTIMIZE` sau khi MERGE nhiều dữ liệu để hợp nhất các small files.
+Delete cần tín hiệu + explicit logic, ví dụ:
+
+```python
+.whenMatchedDelete(condition="s.Operation = 'DELETE'")
+```
+
+#### E. `OPTIMIZE` sau MERGE?
+
+**Không chạy theo thói quen sau mọi MERGE.** Chỉ cân nhắc khi small files/query scan trở thành bottleneck hoặc có maintenance window phù hợp. Fabric còn có automatic/managed optimization ở một số workload.
 
 ### 2.3. So sánh Full Load vs Incremental Load
 
@@ -272,100 +276,114 @@ Star schema là mô hình dữ liệu tối ưu cho phân tích (analytics) gồ
 
 ### 3.2. Surrogate Keys vs Natural Keys
 
-| Đặc điểm | Surrogate Key | Natural Key |
-|-----------|--------------|-------------|
-| **Kiểu dữ liệu** | Integer (INT/BIGINT) | Chuỗi (VARCHAR), tùy nguồn |
-| **Nguồn gốc** | Tự tạo (auto-increment) | Từ hệ thống nguồn |
-| **Kích thước** | Nhỏ (4–8 bytes) | Lớn (tùy thuộc) |
-| **JOIN Performance** | Cao | Thấp hơn |
-| **Xử lý SCD** | Dễ | Khó |
+- **Natural/business key** đến từ source (`CustomerId`, `ProductCode`).
+- **Surrogate key** do dimensional model quản lý, độc lập với source và đặc biệt hữu ích cho SCD Type 2.
 
-> 📌 **Quy tắc thi**: Luôn sử dụng **Surrogate Key** (integer-based) trong dimensional model. Giữ Natural Key làm business key riêng.
+> [!IMPORTANT]
+> Integer/BIGINT là lựa chọn phổ biến nhưng trọng tâm đề thi là **độc lập với source + stable relationship + version history**, không phải “surrogate key bắt buộc luôn là integer”.
 
-**Ví dụ tạo Surrogate Key bằng PySpark**:
+#### Không dùng `monotonically_increasing_id()` như identity generator mặc định
+
+Hàm này unique trong DataFrame nhưng không liên tiếp, phụ thuộc partition và không phải sequence bền vững giữa nhiều run.
+
+Pattern lab **single-writer** dễ hiểu:
+
 ```python
-from pyspark.sql.functions import monotonically_increasing_id
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 
-dim_customer = spark.table("silver.customers") \
-    .select("CustomerID", "CustomerName", "City", "Country", "Segment") \
-    .withColumn("CustomerSK", monotonically_increasing_id())
+source = spark.table('silver.customer')
+target = spark.table('gold.dim_customer')
 
-dim_customer.write.format("delta") \
-    .mode("overwrite") \
-    .saveAsTable("gold.dim_customer")
+existing = target.select('CustomerId').distinct()
+new_rows = (source.dropDuplicates(['CustomerId'])
+            .join(existing, 'CustomerId', 'left_anti'))
+
+max_sk = target.agg(F.coalesce(F.max('CustomerSK'), F.lit(0))).first()[0]
+w = Window.orderBy('CustomerId')
+
+new_rows = new_rows.withColumn(
+    'CustomerSK', F.row_number().over(w) + F.lit(max_sk)
+)
+
+new_rows.write.format('delta').mode('append').saveAsTable('gold.dim_customer')
 ```
+
+Với production concurrency, cần key-allocation/serialization đáng tin cậy hơn; exam tập trung vào concept và loading order.
 
 ### 3.3. Slowly Changing Dimensions (SCD)
 
-#### SCD Type 1 — Overwrite (Ghi đè)
+#### SCD Type 1 — overwrite current value
 
-- **Hành vi**: Cập nhật trực tiếp bản ghi hiện tại, mất lịch sử
-- **Khi nào dùng**: Sửa lỗi dữ liệu, thông tin không cần lịch sử (số điện thoại)
-- **Triển khai**: Dùng `MERGE INTO` với `WHEN MATCHED THEN UPDATE`
+Không giữ lịch sử:
 
 ```sql
--- SCD Type 1: Ghi đè trực tiếp
-MERGE INTO gold.dim_customer AS target
-USING silver.customers AS source
-    ON target.CustomerID = source.CustomerID
+MERGE INTO dbo.DimCustomer AS T
+USING dbo.CustomerStage AS S
+ON T.CustomerId = S.CustomerId
 WHEN MATCHED THEN
-    UPDATE SET 
-        target.CustomerName = source.CustomerName,
-        target.Phone = source.Phone    -- Chỉ cập nhật, không lưu lịch sử
+  UPDATE SET CustomerName=S.CustomerName, Phone=S.Phone
 WHEN NOT MATCHED THEN
-    INSERT (CustomerID, CustomerName, Phone)
-    VALUES (source.CustomerID, source.CustomerName, source.Phone);
+  INSERT (CustomerId, CustomerName, Phone)
+  VALUES (S.CustomerId, S.CustomerName, S.Phone);
 ```
 
-#### SCD Type 2 — Add New Row (Thêm hàng mới)
+#### SCD Type 2 — preserve version history
 
-- **Hành vi**: Giữ nguyên bản ghi cũ, thêm bản ghi mới với flag `IsCurrent`
-- **Khi nào dùng**: Cần phân tích lịch sử (khách hàng chuyển địa chỉ, thay đổi segment)
-- **Cột bắt buộc**: `ValidFrom`, `ValidTo`, `IsCurrent`
+Cột điển hình: `CustomerSK`, `CustomerId`, `ValidFrom`, `ValidTo`, `IsCurrent`.
 
-**Ví dụ SCD Type 2 bằng PySpark**:
+**Bẫy:** xác định changed rows **trước khi expire** current rows.
+
 ```python
-from pyspark.sql.functions import col, lit, current_timestamp
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 from delta.tables import DeltaTable
 
-# Bước 1: Đánh dấu records cũ hết hiệu lực
-dim_table = DeltaTable.forName(spark, "gold.dim_customer")
+src = spark.table('silver.customer')
+cur = (spark.table('gold.dim_customer')
+       .filter('IsCurrent = true')
+       .select('CustomerSK','CustomerId',
+               F.col('City').alias('OldCity'),
+               F.col('Segment').alias('OldSegment')))
 
-dim_table.alias("target").merge(
-    source_df.alias("source"),
-    "target.CustomerID = source.CustomerID AND target.IsCurrent = true"
-).whenMatchedUpdate(
-    condition="target.City <> source.City OR target.Segment <> source.Segment",
-    set={
-        "IsCurrent": lit(False),
-        "ValidTo": current_timestamp()
-    }
-).execute()
+cmp = src.alias('s').join(
+    cur.alias('t'),
+    F.col('s.CustomerId') == F.col('t.CustomerId'),
+    'left'
+)
+changed = (cmp.filter(
+              F.col('t.CustomerId').isNotNull() &
+              ((F.coalesce(F.col('s.City'),F.lit('')) != F.coalesce(F.col('t.OldCity'),F.lit(''))) |
+               (F.coalesce(F.col('s.Segment'),F.lit('')) != F.coalesce(F.col('t.OldSegment'),F.lit(''))))
+           ).select('s.*'))
+new_only = cmp.filter(F.col('t.CustomerId').isNull()).select('s.*')
 
-# Bước 2: Insert records mới (cả mới hoàn toàn và changed)
-new_records = source_df.alias("s").join(
-    spark.table("gold.dim_customer").filter("IsCurrent = true").alias("t"),
-    (col("s.CustomerID") == col("t.CustomerID")) & 
-    ((col("s.City") != col("t.City")) | (col("s.Segment") != col("t.Segment"))),
-    "inner"  # Changed records
-).select("s.*") \
-.union(
-    source_df.alias("s").join(
-        spark.table("gold.dim_customer").alias("t"),
-        col("s.CustomerID") == col("t.CustomerID"),
-        "left_anti"  # New records
-    )
-).withColumn("IsCurrent", lit(True)) \
- .withColumn("ValidFrom", current_timestamp()) \
- .withColumn("ValidTo", lit(None).cast("timestamp"))
+# 1) expire changed current versions
+target = DeltaTable.forName(spark, 'gold.dim_customer')
+(target.alias('t')
+ .merge(changed.select('CustomerId').distinct().alias('s'),
+        't.CustomerId=s.CustomerId AND t.IsCurrent=true')
+ .whenMatchedUpdate(set={'IsCurrent':'false','ValidTo':'current_timestamp()'})
+ .execute())
 
-new_records.write.format("delta").mode("append").saveAsTable("gold.dim_customer")
+# 2) insert new + changed versions
+ins = new_only.unionByName(changed)
+max_sk = spark.table('gold.dim_customer').agg(
+    F.coalesce(F.max('CustomerSK'),F.lit(0)).alias('m')).first()['m']
+w = Window.orderBy('CustomerId')
+
+ins = (ins
+       .withColumn('CustomerSK',F.row_number().over(w)+F.lit(max_sk))
+       .withColumn('ValidFrom',F.current_timestamp())
+       .withColumn('ValidTo',F.lit(None).cast('timestamp'))
+       .withColumn('IsCurrent',F.lit(True)))
+
+ins.write.format('delta').mode('append').saveAsTable('gold.dim_customer')
 ```
 
-**Fabric Copy Job — SCD Type 2 tự động (2026)**:
-- Từ 2026, **Copy Job** trong Fabric Data Factory hỗ trợ SCD Type 2 **no-code**
-- Tự động xử lý `ValidFrom`, `ValidTo`, soft deletes
-- Không cần viết SQL MERGE phức tạp
+#### Copy Job SCD Type 2
+
+CDC Copy Job hỗ trợ **SCD Type 2 (Preview)**: Fabric tạo/duy trì `Valid_From`, `Valid_To`, `Is_Current`; source delete được xử lý như expire/soft-delete version. Khi đề nói **no-code + CDC + historical versions**, đây là lựa chọn cần nhớ nếu connector hỗ trợ.
 
 ### 3.4. Denormalization (Phi chuẩn hóa)
 
@@ -409,7 +427,7 @@ dim_product.write.format("delta") \
 | 2 | Lookup Surrogate Keys | Map natural keys → surrogate keys |
 | 3 | Aggregate nếu cần | Tổng hợp theo granularity yêu cầu |
 | 4 | Insert vào Fact table | Append mode cho new rows |
-| 5 | OPTIMIZE table | Hợp nhất small files |
+| 5 | Cân nhắc `OPTIMIZE` | Chỉ khi small files/query scan là bottleneck; không chạy máy móc sau mọi load |
 
 ```python
 # Load Fact Table với Surrogate Key lookup
@@ -442,119 +460,91 @@ fact_enriched.write.format("delta") \
 
 ## 4. Design and Implement a Loading Pattern for Streaming Data
 
-### 4.1. Tổng quan Streaming Data trong Fabric
+### 4.1. Hai hướng chính
 
-Microsoft Fabric hỗ trợ hai mô hình xử lý streaming:
+| Hướng | Công cụ | Phù hợp |
+|---|---|---|
+| Real-Time Intelligence | Eventstream + Eventhouse + KQL | low-code routing, dashboard, alert |
+| Data Engineering | Spark Structured Streaming | code-first ETL, stateful transform, Delta |
 
-| Mô hình | Công cụ | Latency | Use Case |
-|---------|---------|---------|----------|
-| **Real-time streaming** | Eventstream + Eventhouse | Giây | IoT, alerting, dashboards real-time |
-| **Near-real-time (micro-batch)** | Spark Structured Streaming | Phút | Log processing, incremental ETL |
+> [!IMPORTANT]
+> Fabric Runtime **2.0 (Spark 4.1)** đã có **Real-time Mode** cho ultra-low-latency trên topology được hỗ trợ. Không còn đúng nếu học “Spark streaming luôn micro-batch/phút”.
 
-### 4.2. Kiến trúc Streaming Data Loading
+### 4.2. Eventstream pattern
 
-```
-                                    ┌─────────────────┐
-                                    │  Real-Time       │
-                                ┌───►│  Dashboard (KQL) │
-                                │    └─────────────────┘
-┌──────────┐    ┌───────────┐  │    ┌─────────────────┐
-│ Event Hub │───►│Eventstream│──┼───►│  Eventhouse      │
-│ / Kafka   │    │           │  │    │  (KQL Database)  │
-└──────────┘    └───────────┘  │    └─────────────────┘
-                                │    ┌─────────────────┐
-                                └───►│  Lakehouse       │
-                                     │  (Delta Table)   │
-                                     └────────┬────────┘
-                                              │
-                                     ┌────────▼────────┐
-                                     │  Spark Notebook  │
-                                     │  (Structured     │
-                                     │   Streaming)     │
-                                     └─────────────────┘
+```text
+Sources → Eventstream operators → Eventhouse / Lakehouse / Activator / Stream / Custom endpoint
+                              └→ Spark Notebook destination (Preview)
 ```
 
-### 4.3. Loading Pattern cho Eventstream → Eventhouse
+Các operators quan trọng: Filter, Manage Fields, Aggregate/Group By, Join, Union, Expand, SQL operator (Preview).
 
-**Bước 1**: Tạo Eventstream kết nối nguồn (Event Hub, Kafka, Custom App)
-**Bước 2**: Cấu hình destination là KQL Database trong Eventhouse
-**Bước 3**: Map schema và chọn data format (JSON, Avro)
-**Bước 4**: Tùy chỉnh ingestion mapping
+### 4.3. Spark Structured Streaming — built-in file source
 
-> 📌 **Điểm thi**: Eventstream cho phép **split stream** (1 nguồn → nhiều đích) và **filter** trước khi ghi vào destination.
-
-### 4.4. Loading Pattern cho Spark Structured Streaming
+Fabric tài liệu hóa file sources `text/csv/json/parquet/orc`, Delta, Kafka, Event Hubs/Fabric Eventstream qua compatible connectors/endpoints và `rate` cho test.
 
 ```python
-# Đọc streaming data từ Event Hub
-from pyspark.sql.functions import from_json, col
-from pyspark.sql.types import StructType, StringType, DoubleType, TimestampType
+from pyspark.sql.types import *
+from pyspark.sql import functions as F
 
-# Định nghĩa schema
-schema = StructType() \
-    .add("DeviceId", StringType()) \
-    .add("Temperature", DoubleType()) \
-    .add("Humidity", DoubleType()) \
-    .add("EventTime", TimestampType())
+schema=StructType([
+    StructField('DeviceId',StringType()),
+    StructField('Temperature',DoubleType()),
+    StructField('EventTime',TimestampType())
+])
 
-# Đọc từ Event Hub (streaming)
-raw_stream = spark.readStream \
-    .format("eventhubs") \
-    .options(**eventhub_config) \
-    .load()
+stream=(spark.readStream
+        .schema(schema)
+        .format('json')
+        .option('maxFilesPerTrigger',100)
+        .load('Files/incoming/iot'))
 
-# Parse JSON body
-parsed_stream = raw_stream \
-    .select(from_json(col("body").cast("string"), schema).alias("data")) \
-    .select("data.*")
-
-# Ghi vào Lakehouse Delta Table
-query = parsed_stream.writeStream \
-    .format("delta") \
-    .outputMode("append") \
-    .option("checkpointLocation", "abfss://<path>/_checkpoint/iot_events") \
-    .trigger(processingTime="1 minute") \
-    .toTable("bronze.iot_events")
+q=(stream.writeStream
+   .format('delta')
+   .outputMode('append')
+   .option('checkpointLocation','Files/checkpoints/iot')
+   .trigger(availableNow=True)
+   .toTable('bronze_iot'))
+q.awaitTermination()
 ```
 
-### 4.5. Trigger Options cho Streaming
+> [!WARNING]
+> `cloudFiles` / Databricks Auto Loader không phải Fabric Spark API được Microsoft Learn tài liệu hóa cho DP-700. Học built-in file source ở Fabric.
 
-| Trigger | Mô tả | Khi nào dùng |
-|---------|--------|-------------|
-| `processingTime="1 minute"` | Micro-batch mỗi 1 phút | Streaming liên tục, cân bằng latency/cost |
-| `availableNow=True` | Xử lý tất cả dữ liệu có sẵn rồi dừng | Scheduled incremental load (tiết kiệm cost) |
-| `once=True` | Chạy 1 micro-batch duy nhất rồi dừng | Testing, one-time catch-up |
-| Continuous (experimental) | True millisecond latency | Hiếm khi dùng, experimental |
+### 4.4. Execution/trigger model
 
-> 📌 **Best Practice 2026**: Ưu tiên `trigger(availableNow=True)` cho pipeline chạy theo schedule. Nó xử lý tất cả data tồn đọng thành micro-batches rồi tự shutdown → tiết kiệm compute cost.
+| Mode | Dùng khi |
+|---|---|
+| Micro-batch default/fixed interval | always-on general streaming |
+| `availableNow=True` | scheduled incremental: process backlog rồi stop |
+| Real-time Mode | Runtime 2.0+, supported ultra-low-latency Spark topology |
 
-### 4.6. Checkpointing — Đảm bảo Exactly-Once
+Real-time Mode hiện yêu cầu output mode `update`; PySpark preview chưa expose `Trigger.RealTime` trực tiếp trong `.trigger()`.
 
-- **Bắt buộc** phải chỉ định `checkpointLocation` cho mọi writeStream
-- Mỗi streaming query phải có **checkpoint riêng biệt** — KHÔNG chia sẻ
-- Checkpoint lưu trữ:
-  - Offset đã đọc từ nguồn
-  - State của windowed aggregations
-  - Metadata xử lý
+### 4.5. Checkpoint, fault tolerance, exactly-once
+
+- Mỗi query dùng checkpoint riêng trên durable OneLake path.
+- Checkpoint giữ offsets/progress/state.
+- Supported sink như Delta + checkpoint hỗ trợ fault-tolerant exactly-once processing semantics.
+- `foreachBatch`/custom sink có thể bị retry → write logic phải **idempotent**.
 
 ```python
-# Mỗi streaming query phải có checkpoint riêng
-query1 = (
-    stream_a.writeStream
-    .format("delta")
-    .option("checkpointLocation", "Files/checkpoints/query1")
-    .toTable("bronze.stream_a")
-)
+def upsert_batch(batch_df,batch_id):
+    from delta.tables import DeltaTable
+    tgt=DeltaTable.forName(spark,'silver_orders')
+    (tgt.alias('t')
+     .merge(batch_df.alias('s'),'t.OrderId=s.OrderId')
+     .whenMatchedUpdateAll(condition='s.ModifiedDate >= t.ModifiedDate')
+     .whenNotMatchedInsertAll()
+     .execute())
 
-query2 = (
-    stream_b.writeStream
-    .format("delta")
-    .option("checkpointLocation", "Files/checkpoints/query2")
-    .toTable("bronze.stream_b")
-)
+q=(stream_df.writeStream
+   .foreachBatch(upsert_batch)
+   .option('checkpointLocation','Files/checkpoints/orders-upsert')
+   .trigger(availableNow=True)
+   .start())
+q.awaitTermination()
 ```
-
----
 
 ## 5. Câu hỏi mô phỏng bài thi (Practice Questions)
 
@@ -613,7 +603,7 @@ D. SCD Type 3 — Add new column
 A. `trigger(processingTime="10 seconds")`  
 B. `trigger(once=True)`  
 C. `trigger(availableNow=True)`  
-D. `trigger(continuous="1 second")`
+D. Bật Real-time Mode dù workload chỉ chạy theo schedule
 
 **✅ Correct Answer: C**
 
@@ -621,7 +611,7 @@ D. `trigger(continuous="1 second")`
 > - **(C) Đúng** — `availableNow=True` xử lý **tất cả dữ liệu hiện có** thành nhiều micro-batches rồi tự động dừng. Đây là lựa chọn tối ưu cho pipeline chạy theo schedule vì nó vừa đảm bảo xử lý hết data, vừa tự shutdown để tiết kiệm compute.
 > - **(A) Sai** — `processingTime` giữ Spark session chạy liên tục, tốn compute khi không có data mới.
 > - **(B) Sai** — `once=True` chỉ chạy **1 micro-batch duy nhất**, có thể không xử lý hết tất cả data tồn đọng nếu lượng data lớn.
-> - **(D) Sai** — Continuous trigger là experimental và giữ compute chạy liên tục.
+> - **(D) Sai** — Real-time Mode dành cho always-on low-latency supported topology; không phù hợp yêu cầu scheduled catch-up rồi stop.
 
 ---
 
@@ -723,8 +713,8 @@ D. Dataflow Gen2 with incremental refresh
 **✅ Correct Answer: B**
 
 > **Giải thích**:
-> - **(B) Đúng** — Eventstream → Eventhouse cung cấp **sub-second latency** cho real-time ingestion. Dữ liệu được index và sẵn sàng query bằng KQL ngay lập tức. Kết hợp với Real-Time Dashboard cho live monitoring.
-> - **(A) Sai** — Spark Structured Streaming có micro-batch latency tối thiểu hàng giây đến phút, không đạt sub-second.
+> - **(B) Đúng** — Eventstream → Eventhouse phù hợp low-code, low-latency real-time analytics; không coi “sub-second” là SLA mặc định cho mọi topology. Dữ liệu được index và sẵn sàng query bằng KQL ngay lập tức. Kết hợp với Real-Time Dashboard cho live monitoring.
+> - **(A) Sai** — Spark mặc định dùng micro-batch, nhưng Runtime 2.0 còn có Real-time Mode. Trong scenario low-code dashboard này Eventstream/Eventhouse vẫn là lựa chọn phù hợp hơn.
 > - **(C) Sai** — Pipeline schedule 5 phút là batch, không phải real-time.
 > - **(D) Sai** — Dataflow Gen2 là batch processing, không hỗ trợ streaming.
 
@@ -780,14 +770,6 @@ D. VACUUM RETAIN 0 HOURS trước mỗi run
 **B.** Thiết kế idempotent tách ingestion/staging khỏi merge và commit watermark.
 </details>
 
-
----
-
-## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
-
-- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
-- [Replace Delta tables](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-lake-replace)
-- [Structured Streaming overview](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview)
 
 ---
 
@@ -948,4 +930,54 @@ spark.table("gold.dim_customer").orderBy("CustomerId", "EffectiveFrom").show(tru
 
 > [!TIP]
 > Tham khảo: [Delta Lake MERGE documentation](https://learn.microsoft.com/en-us/azure/databricks/delta/merge) và [Lakehouse dimensional modeling](https://learn.microsoft.com/en-us/fabric/data-warehouse/dimensional-modeling-overview)
+
+---
+
+## 9. CODE CHEAT SHEET — LOADING PATTERNS
+
+```text
+Full snapshot?             → Full copy / Overwrite
+Reliable ModifiedDate?     → Watermark
+Need insert+update+delete? → CDC / Mirroring
+Current state only?        → Merge / SCD1
+Need history?              → SCD2
+Retry-safe?                → Dedup + idempotent MERGE + watermark commit last
+Scheduled stream catch-up? → availableNow + checkpoint
+Low-code realtime route?   → Eventstream
+```
+
+**SQL latest-per-key:**
+
+```sql
+WITH R AS (
+  SELECT *, ROW_NUMBER() OVER(PARTITION BY CustomerId ORDER BY ModifiedDate DESC) rn
+  FROM dbo.CustomerStage
+)
+SELECT * FROM R WHERE rn=1;
+```
+
+**PySpark latest-per-key:**
+
+```python
+w=Window.partitionBy('CustomerId').orderBy(F.col('ModifiedDate').desc())
+latest=df.withColumn('rn',F.row_number().over(w)).filter('rn=1').drop('rn')
+```
+
+---
+
+## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
+
+- [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [What is Copy Job](https://learn.microsoft.com/en-us/fabric/data-factory/what-is-copy-job)
+- [CDC in Copy Job](https://learn.microsoft.com/en-us/fabric/data-factory/cdc-copy-job)
+- [Structured Streaming overview](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview)
+- [Structured Streaming best practices](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-best-practices)
+- [Real-time Mode](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-real-time-mode)
+
+
+- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [Replace Delta tables](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-lake-replace)
+- [Structured Streaming overview](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview)
+
+---
 

@@ -3,7 +3,7 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 04/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
 > **Skills measured as of July 21, 2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
@@ -102,7 +102,7 @@ Bạn cần xử lý loại dữ liệu nào?
 - Cần giao diện visual drag-and-drop
 
 ❌ **KHÔNG chọn Dataflows Gen2 khi**:
-- Data lớn (hàng trăm triệu rows) → chọn Notebook
+- Không dùng ngưỡng row cố định; chọn Notebook khi cần distributed compute, custom code, stateful/complex transformation hoặc Spark ecosystem.
 - Logic phức tạp (window functions, ML) → chọn Notebook
 - Real-time processing → chọn KQL hoặc Spark Streaming
 
@@ -133,211 +133,154 @@ Bạn cần xử lý loại dữ liệu nào?
 - Cần time-series analytics
 - Query trên semi-structured data (JSON) nhanh
 
-> 📌 **Tip thi**: Câu hỏi thường cho scenario → bạn phải chọn công cụ phù hợp. Nhớ: **Dataflows Gen2 = low-code, nhỏ** | **Notebook = pro-code, lớn** | **T-SQL = Warehouse** | **KQL = Eventhouse/real-time**
+> 📌 **Tip thi**: Câu hỏi thường cho scenario → bạn phải chọn công cụ phù hợp. Nhớ: **Dataflows Gen2 = low-code/Power Query** | **Notebook = pro-code/distributed Spark** | **T-SQL = relational SQL** | **KQL = Eventhouse/time-series**
 
 ---
 
 ## 3. Create and Manage OneLake Shortcuts
 
-### 3.1. OneLake Shortcuts là gì?
+### 3.1. Khái niệm
+Shortcut là object trong OneLake trỏ đến target path khác, giúp tránh edge copy/staging không cần thiết.
 
-OneLake Shortcuts là **symbolic links (liên kết ảo)** cho phép truy cập dữ liệu ở vị trí khác **mà không cần di chuyển hoặc sao chép dữ liệu**. Shortcuts xuất hiện như một thư mục/bảng bình thường trong Lakehouse hoặc KQL Database.
+**Exam keyword:** `do not copy`, `minimize data movement`, `single source of truth` → nghĩ Shortcut.
 
-### 3.2. Các loại Shortcut được hỗ trợ
+### 3.2. Nguồn hiện hành cần biết
+Tính đến 08/2026, Microsoft tài liệu hóa internal OneLake, ADLS Gen2, Azure Blob, Amazon S3/S3-compatible, Google Cloud Storage, Dataverse, OneDrive for Business/enterprise SharePoint và các nguồn khác trong support matrix.
 
-| Nguồn | Loại | Mô tả |
-|-------|------|--------|
-| **OneLake Internal** | Internal | Trỏ tới Lakehouse/Warehouse/KQL DB khác trong Fabric |
-| **Azure Data Lake Storage Gen2** | External | Trỏ tới ADLS Gen2 container/folder |
-| **Amazon S3** | External | Trỏ tới S3 bucket (và S3-compatible) |
-| **Google Cloud Storage** | External | Trỏ tới GCS bucket |
-| **Dataverse** | External | Trỏ tới bảng Dataverse (qua Fabric Link) |
-| **SharePoint/OneDrive** | External | Trỏ tới thư mục SharePoint/OneDrive |
-| **Azure Blob Storage** | External | Trỏ tới Azure Blob container |
+### 3.3. Lakehouse Tables vs Files
 
-### 3.3. Cách tạo Shortcut
+| Target | Shortcut location | Cách dùng |
+|---|---|---|
+| Delta table | `Tables` | discover/query như table |
+| Folder/files | `Files` | Spark đọc bằng path |
 
-**Qua giao diện UI**:
-1. Mở **Lakehouse** hoặc **KQL Database**
-2. Chuột phải lên **Tables** hoặc **Files** → **New Shortcut**
-3. Chọn nguồn (OneLake, ADLS Gen2, S3, GCS, Dataverse...)
-4. Cấu hình connection (URL, authentication)
-5. Chọn thư mục/bảng cần shortcut
-6. Đặt tên → Create
-
-**Qua REST API (programmatic)**:
-```json
-// POST https://api.fabric.microsoft.com/v1/workspaces/{workspaceId}/items/{lakehouseId}/shortcuts
-
-{
-    "path": "Tables/sales_data",
-    "target": {
-        "adlsGen2": {
-            "location": "https://mystorage.dfs.core.windows.net",
-            "subpath": "/container/sales/"
-        }
-    }
-}
+```python
+df=spark.read.format('parquet').load('Files/external_sales/2026/')
+df.write.format('delta').mode('overwrite').saveAsTable('silver_sales')
 ```
 
-### 3.4. Authentication cho Shortcuts
+### 3.4. KQL database/Eventhouse
+Shortcut được query như external table:
 
-| Phương pháp | Mô tả | Khi nào dùng |
-|-------------|--------|-------------|
-| **Pass-through** | Dùng identity của user đang truy cập | Interactive scenarios |
-| **Delegated Identity** | Dùng Service Principal/Connection | Automated pipelines |
-| **Trusted Workspace Access** | Dùng Workspace Identity | ADLS Gen2 có firewall |
+```kusto
+external_table('SalesShortcut')
+| where OrderTime > ago(1d)
+| summarize Revenue=sum(Amount) by bin(OrderTime,1h)
+```
 
-### 3.5. Quản lý và Governance
+Nếu query external Delta shortcut thường xuyên → cân nhắc Query acceleration.
 
-- **Caching**: OneLake hỗ trợ cache shortcut data (1–28 ngày) → giảm egress cost
-- **Billing**: Chi phí compute tính trên **destination capacity** (nơi shortcut nằm), KHÔNG phải source
-- **Security**: Shortcuts kế thừa security controls của OneLake (sensitivity labels)
-- **Catalog**: Shortcuts xuất hiện trong OneLake Catalog
+### 3.5. Authentication
+Không học rule “mọi shortcut đều pass-through user identity”. Auth phụ thuộc source. Ví dụ Azure Blob hỗ trợ Organizational account, Service principal, Workspace identity và SAS; SharePoint/OneDrive có requirement riêng.
 
-### 3.6. Shortcut trong Tables vs Files
+### 3.6. Decision
 
-| Vị trí | Hành vi |
-|--------|---------|
-| **Tables/** | Dữ liệu được coi là Delta table, query được bằng SQL endpoint |
-| **Files/** | Dữ liệu là unmanaged files, cần đọc bằng Spark/custom code |
-
-> 📌 **Điểm thi quan trọng**: Shortcuts **KHÔNG** hỗ trợ kết nối trực tiếp tới Azure SQL Database, Cosmos DB, hay bất kỳ database nào. Chúng chỉ hỗ trợ **storage-level** connections (ADLS, S3, GCS) và **OneLake internal** items.
-
----
+```text
+Storage/OneLake, không muốn copy     → Shortcut
+Operational DB, managed replication  → Mirroring
+Guided full/incremental/CDC movement → Copy Job
+Multi-step orchestration             → Pipeline
+```
 
 ## 4. Implement Mirroring
 
-### 4.1. Mirroring là gì?
+### 4.1. Hai loại cần phân biệt
+1. **Database mirroring**: replicate data/change vào OneLake Delta.
+2. **Metadata mirroring**: đồng bộ metadata và reference/shortcut underlying data, ví dụ Azure Databricks catalog.
 
-Mirroring trong Fabric là tính năng **zero-ETL** tự động replicate dữ liệu từ operational database vào OneLake. Dữ liệu được chuyển đổi thành **Delta Lake format** và có sẵn SQL analytics endpoint.
+### 4.2. Nguồn Mirroring hiện hành (08/2026)
+Microsoft hiện tài liệu hóa Azure SQL Database, Azure SQL MI, Azure Cosmos DB, Azure Database for PostgreSQL, Azure Database for MySQL (Preview), SQL Server, Snowflake, Google BigQuery (Preview), Oracle, SAP, Azure Databricks metadata mirroring, Dremio metadata mirroring (Preview), Fabric SQL database và Open Mirroring.
 
-### 4.2. Nguồn dữ liệu hỗ trợ Mirroring
+> [!IMPORTANT]
+> GA/Preview thay đổi nhanh; kiểm tra support matrix gần ngày thi.
 
-| Nguồn | Trạng thái (2026) | Ghi chú |
-|-------|-------------------|---------|
-| **Azure SQL Database** | ✅ GA | Không hỗ trợ nếu đã bật CDC hoặc Synapse Link |
-| **Azure SQL Managed Instance** | ✅ GA | Hỗ trợ nguồn sau firewall |
-| **Azure Cosmos DB** | ✅ GA | NoSQL → Delta Lake, hỗ trợ private network |
-| **Snowflake** | ✅ GA | Managed tables + Apache Iceberg tables |
-| **SQL Server 2016–2025** | ✅ GA | On-premises, Azure VM, non-Azure cloud |
-| **Open Mirroring** | ✅ GA | 150+ nguồn qua third-party (SAP, Salesforce...) |
+### 4.3. Azure SQL Database limitation dễ ra đề
+Azure SQL Database không thể mirrored nếu đã bật **CDC**, **Azure Synapse Link for SQL**, hoặc đã mirror vào Fabric workspace khác.
 
-### 4.3. Kiến trúc Mirroring
-
-```
-┌──────────────────┐         ┌──────────────────────────────┐
-│ Source Database   │         │      Microsoft Fabric        │
-│ (Azure SQL, etc) │         │                              │
-│                  │  auto   │  ┌────────────────────────┐  │
-│  ┌─────────┐    │ replicate│  │   Mirrored Database    │  │
-│  │ Table A  │────┼─────────┼─►│  ┌──────────────────┐ │  │
-│  │ Table B  │    │         │  │  │ Delta Tables     │ │  │
-│  │ Table C  │    │  CDC    │  │  │ (Auto-converted) │ │  │
-│  └─────────┘    │ changes │  │  └──────────────────┘ │  │
-│                  │─────────┼─►│  ┌──────────────────┐ │  │
-│                  │         │  │  │ SQL Analytics    │ │  │
-│                  │         │  │  │ Endpoint         │ │  │
-└──────────────────┘         │  │  └──────────────────┘ │  │
-                             │  └────────────────────────┘  │
-                             │           │                  │
-                             │     ┌─────▼─────┐           │
-                             │     │ Power BI   │           │
-                             │     │(Direct Lake)│          │
-                             │     └───────────┘           │
-                             └──────────────────────────────┘
+```text
+Azure SQL + near-real-time + no CDC/Synapse Link → Mirroring
+Azure SQL đã bật CDC + need change replication    → Copy Job CDC có thể phù hợp
 ```
 
-### 4.4. Mirroring vs Shortcuts vs Pipelines
+### 4.4. Mirroring vs Shortcut vs Pipeline/Copy Job
 
-| Tiêu chí | **Mirroring** | **Shortcuts** | **Pipelines** |
-|----------|:-------------|:-------------|:-------------|
-| **Data Movement** | Copy (auto-replicate) | No copy (virtual) | Copy (manual) |
-| **Freshness** | Near real-time | Real-time (đọc nguồn) | Batch (schedule) |
-| **Complexity** | Thấp (zero-ETL) | Thấp | Trung bình → Cao |
-| **Source types** | Databases only | Storage only | Cả hai |
-| **Transformation** | Không (raw replicate) | Không | Có (trong pipeline) |
-| **Maintenance** | Tự động | Tối thiểu | Thủ công |
+| Requirement | Tool |
+|---|---|
+| managed near-real-time DB replication | Mirroring |
+| zero-copy storage access | Shortcut |
+| simple guided data movement | Copy Job |
+| orchestration + conditions + transforms | Pipeline |
 
-### 4.5. Extended Capabilities (2026)
+### 4.5. Extended capabilities
+Delta Change Data Feed và Mirroring views là extended capabilities có billing/behavior riêng.
 
-Từ 2026, Mirroring hỗ trợ **Extended Capabilities** (tính năng bổ sung, có thêm chi phí):
-- **Change Data Feed (CDF)**: Truy cập lịch sử thay đổi của bảng mirrored
-- **Views**: Replicate views từ nguồn (không chỉ tables)
-- Yêu cầu cấu hình riêng và có chi phí bổ sung
-
-> 📌 **Điểm thi**: Mirroring **KHÔNG hỗ trợ** Azure SQL Database đã bật CDC trước đó. Nếu nguồn đã bật CDC → dùng Copy Job CDC mode thay thế.
-
----
+### 4.6. Bẫy
+- Database mirroring **có data replication**, không phải zero-copy.
+- Metadata mirroring mới dùng reference/shortcut underlying data.
+- Source RLS/DDM/object permissions không mặc định được propagated sang replicated OneLake data.
 
 ## 5. Ingest Data by Using Pipelines
 
-### 5.1. Kiến trúc Pipeline trong Fabric Data Factory
+### 5.1. Pipeline là orchestrator
+Dùng khi cần Copy/Notebook/Dataflow/Script cùng dependency, parameter, loop, error path, schedule/event trigger.
 
-```
-Pipeline
-├── Copy Activity          → Di chuyển data từ A → B
-├── Dataflow Activity      → Gọi Dataflow Gen2
-├── Notebook Activity      → Chạy Spark Notebook
-├── Stored Procedure       → Chạy stored proc trong Warehouse
-├── Script Activity        → Chạy SQL script
-├── ForEach Loop           → Lặp qua danh sách items
-├── If Condition           → Logic rẽ nhánh
-├── Lookup Activity        → Truy vấn data để dùng trong pipeline
-├── Set Variable           → Gán biến
-├── Web Activity           → Gọi REST API
-└── Get Metadata           → Lấy thông tin file/folder
-```
+### 5.2. Copy Activity — write behavior phụ thuộc destination
 
-### 5.2. Copy Activity — Trọng tâm
+**Lakehouse Table:** `Append`, `Overwrite`, `Upsert` + key columns.  
+**Warehouse:** `Insert`, `Upsert` + key columns.
 
-**Copy Activity** là activity phổ biến nhất, dùng để di chuyển dữ liệu từ nguồn tới đích.
+> [!IMPORTANT]
+> Không học một danh sách write mode chung cho mọi connector. “Delete + Insert” không phải universal Copy Activity mode.
 
-**Các chế độ ghi (Write Mode)**:
+### 5.3. Copy Job — khác Copy Activity
+Copy Job là standalone guided data movement item:
+- Full copy
+- Incremental watermark
+- CDC nếu connector hỗ trợ
+- Fabric quản lý last-successful-run state
+- Append/Overwrite/Merge; SCD Type 2 trên supported CDC paths
+- Audit columns
+- Auto-partitioning (Preview) ở supported connectors
 
-| Mode | Mô tả | Use Case |
-|------|--------|----------|
-| **Append** | Thêm data mới vào bảng hiện có | Incremental load |
-| **Overwrite** | Ghi đè toàn bộ bảng | Full load |
-| **Merge** | Upsert (INSERT + UPDATE) | CDC, SCD Type 1 |
-| **Delete + Insert** | Xóa data khớp rồi insert | Partition-level reload |
+Copy Job còn có thể chạy **bên trong Pipeline qua Copy Job activity**.
 
-### 5.3. Copy Job (2026)
+### 5.4. Robust watermark pipeline
 
-**Copy Job** là phiên bản tiến hóa của Copy Activity, hỗ trợ:
-- **CDC natively** cho Azure SQL, SQL Server, Snowflake
-- **Watermark-based incremental** tự động
-- **SCD Type 2** no-code
-- **Merge mode** tự động
-
-### 5.4. Pipeline Parameters và Dynamic Expressions
-
-```json
-// Pipeline Parameter
-{
-    "TableName": { "type": "String", "defaultValue": "customers" },
-    "LoadDate": { "type": "String", "defaultValue": "" }
-}
-
-// Dynamic Expression trong Copy Activity Source Query
-@concat('SELECT * FROM ', pipeline().parameters.TableName, 
-        ' WHERE ModifiedDate > ''', pipeline().parameters.LoadDate, '''')
+```text
+Lookup OldWatermark
+→ Lookup NewWatermark at source
+→ Copy (Old, New]
+→ Notebook/Script MERGE
+→ SUCCESS: update control table = NewWatermark
 ```
 
-### 5.5. ForEach Pattern — Load nhiều bảng
-
-```
-Pipeline:
-├── Lookup Activity: 
-│     Query: SELECT TableName, WatermarkColumn FROM control.tables WHERE IsActive = 1
-│
-└── ForEach Activity (items: @activity('Lookup').output.value)
-    └── Copy Activity (inside ForEach):
-          Source: @item().TableName
-          Destination: Lakehouse bronze.@{item().TableName}
+```text
+@concat(
+  'SELECT * FROM dbo.Orders WHERE ModifiedDate > ''',
+  activity('GetOldWatermark').output.firstRow.LastWatermark,
+  ''' AND ModifiedDate <= ''',
+  activity('GetNewWatermark').output.firstRow.NewWatermark,
+  ''''
+)
 ```
 
----
+> Hai dấu nháy đơn liên tiếp (`''`) là cách escape dấu `'` bên trong chuỗi SQL của Fabric expression. Trong production nên truyền parameterized query khi connector hỗ trợ để giảm lỗi quoting/type.
+
+### 5.5. Metadata-driven multi-table pattern
+
+```sql
+CREATE TABLE dbo.IngestionConfig(
+ TableName varchar(128) NOT NULL,
+ WatermarkColumn varchar(128) NULL,
+ TargetTable varchar(128) NOT NULL,
+ IsActive bit NOT NULL
+);
+```
+
+`Lookup → ForEach → parameterized Copy/Notebook` giúp tránh tạo hàng chục activity thủ công.
+
+### 5.6. Retry rule
+Retry transient error; credential/schema/permission error phải sửa nguyên nhân. Mọi activity có thể retry nên target write cần idempotent hoặc source range cố định.
 
 ## 6. Transform Data by Using PySpark, SQL, and KQL
 
@@ -947,17 +890,17 @@ D. Delay the entire pipeline until all dimension data is confirmed loaded
 **Which approach should you use?**
 
 A. Configure database mirroring  
-B. Use a Copy Job with CDC mode  
-C. Create OneLake shortcuts to the Synapse Link storage  
-D. Use Dataflow Gen2 with incremental refresh
+B. Use a Copy Job with an incremental method supported by the source (CDC if CDC can be enabled/supported; otherwise a reliable watermark)  
+C. Create OneLake shortcuts directly to the Azure SQL Database  
+D. Use Dataflow Gen2 and full-refresh every minute
 
 **✅ Correct Answer: B**
 
 > **Giải thích**:
-> - **(B) Đúng** — Copy Job CDC mode là giải pháp phù hợp khi Azure SQL đã có Synapse Link enabled, vì Mirroring KHÔNG hỗ trợ databases đã bật Synapse Link hoặc CDC.
-> - **(A) Sai** — Mirroring **không tương thích** với Azure SQL Database đã bật Synapse Link.
-> - **(C) Sai** — Shortcuts không kết nối trực tiếp tới SQL Database.
-> - **(D) Sai** — Dataflow Gen2 incremental refresh phức tạp hơn và không hiệu quả bằng CDC.
+> - **(A) Sai** — Azure SQL Database đã bật Synapse Link là một documented blocker cho Fabric Mirroring.
+> - **(B) Đúng** — Khi Mirroring bị chặn, dùng Data Factory incremental movement. Chọn **CDC** chỉ khi CDC được bật và connector hỗ trợ; nếu không, dùng **watermark** đáng tin cậy. Đừng suy luận “Synapse Link enabled ⇒ CDC cũng enabled”.
+> - **(C) Sai** — OneLake shortcut không trỏ trực tiếp vào relational Azure SQL Database như một storage shortcut.
+> - **(D) Sai** — full-refresh mỗi phút tạo data movement/load không cần thiết.
 
 ---
 
@@ -1087,14 +1030,6 @@ D. KQL Queryset trên Warehouse
 
 ---
 
-## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
-
-- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
-- [OneLake shortcuts](https://learn.microsoft.com/en-us/fabric/onelake/onelake-shortcuts)
-- [Copy activity](https://learn.microsoft.com/en-us/fabric/data-factory/copy-data-activity)
-
----
-
 ## 12. CÂU HỎI SCENARIO — BATCH DATA
 
 > Các câu hỏi dưới đây là câu tự soạn theo blueprint DP-700, **không phải câu hỏi thật hoặc exam dump**.
@@ -1144,7 +1079,7 @@ D. Deployment pipeline
 
 <details><summary>Đáp án và giải thích</summary>
 
-**A.** [OneLake shortcuts](https://learn.microsoft.com/en-us/fabric/onelake/onelake-shortcuts) tạo virtual pointer tới external storage — **không copy dữ liệu**, truy cập theo passthrough authentication. Hỗ trợ ADLS Gen2, S3, GCS, Dataverse. Zero-copy = không tốn storage OneLake, tuân thủ data residency.
+**A.** [OneLake shortcuts](https://learn.microsoft.com/en-us/fabric/onelake/onelake-shortcuts) tạo virtual pointer tới external storage — **không cần ingest/copy bản dữ liệu nguồn vào Lakehouse**. Cơ chế authentication **phụ thuộc loại shortcut/source** (ví dụ Organizational account, Service principal, Workspace identity, SAS ở các connector phù hợp), không có một rule “mọi shortcut đều passthrough”.
 
 </details>
 
@@ -1273,4 +1208,76 @@ ORDER BY OrderDate, Revenue DESC;
 
 > [!NOTE]
 > Fabric Warehouse sử dụng distributed SQL engine. Tham khảo: [Fabric Warehouse overview](https://learn.microsoft.com/en-us/fabric/data-warehouse/data-warehousing)
+
+---
+
+## 14. CODE CHEAT SHEET — BATCH DATA
+
+**PySpark:**
+```python
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+clean=(df.filter(F.col('OrderId').isNotNull())
+       .withColumn('Amount',F.col('Amount').cast('decimal(18,2)'))
+       .fillna({'Region':'Unknown'}))
+w=Window.partitionBy('OrderId').orderBy(F.col('ModifiedDate').desc())
+latest=clean.withColumn('rn',F.row_number().over(w)).filter('rn=1').drop('rn')
+```
+
+**T-SQL window + aggregate:**
+```sql
+WITH Latest AS (
+ SELECT *, ROW_NUMBER() OVER(PARTITION BY OrderId ORDER BY ModifiedDate DESC) rn
+ FROM dbo.OrderStage
+)
+SELECT Region, SUM(Amount) Revenue, COUNT(*) Orders
+FROM Latest
+WHERE rn=1
+GROUP BY Region
+HAVING SUM(Amount)>10000;
+```
+
+**KQL core:**
+```kusto
+Telemetry
+| where Timestamp > ago(24h)
+| extend Temp=todouble(Temperature)
+| project Timestamp,DeviceId,Site,Temp
+| summarize AvgTemp=avg(Temp), P95=percentile(Temp,95), Events=count()
+  by Site,DeviceId,bin(Timestamp,5m)
+| order by Timestamp desc
+```
+
+Operators cần nhận ra: `where`, `project`, `extend`, `summarize`, `bin`, `join`, `distinct`, `arg_max`, `top`, `take`, `order by`, `mv-expand`, `parse_json`, `make-series`.
+
+```text
+Power Query/low-code               → Dataflow Gen2
+Distributed/custom Spark           → Notebook
+Relational SQL transform           → T-SQL
+Time-series/log/telemetry          → KQL
+Move data only                     → Copy Job
+Orchestrate many steps             → Pipeline
+Zero-copy storage                  → Shortcut
+Managed operational DB replication→ Mirroring
+```
+
+---
+
+## NGUỒN CHÍNH THỨC ĐÃ ĐỐI CHIẾU
+
+- [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [Lakehouse Copy Activity](https://learn.microsoft.com/en-us/fabric/data-factory/connector-lakehouse-copy-activity)
+- [What is Copy Job](https://learn.microsoft.com/en-us/fabric/data-factory/what-is-copy-job)
+- [CDC in Copy Job](https://learn.microsoft.com/en-us/fabric/data-factory/cdc-copy-job)
+- [Mirroring overview](https://learn.microsoft.com/en-us/fabric/mirroring/overview)
+- [Azure SQL mirroring limitations](https://learn.microsoft.com/en-us/fabric/mirroring/azure-sql-database-limitations)
+- [OneLake Shortcuts](https://learn.microsoft.com/en-us/fabric/onelake/onelake-shortcuts)
+
+
+- [DP-700 study guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
+- [OneLake shortcuts](https://learn.microsoft.com/en-us/fabric/onelake/onelake-shortcuts)
+- [Copy activity](https://learn.microsoft.com/en-us/fabric/data-factory/copy-data-activity)
+
+---
 
