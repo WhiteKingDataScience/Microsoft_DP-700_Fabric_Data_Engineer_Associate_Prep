@@ -11,7 +11,7 @@
 
 > [!IMPORTANT]
 > ### Cách dùng tài liệu này
-> Đây là file cần ưu tiên cao vì **Optimize performance** là một trong Top 3 skill areas yếu nhất trong score report của bạn. Luôn theo chu trình:
+> Đây là file cần ưu tiên cao vì **Optimize performance** là nhóm kỹ năng khó nhất của DP-700: đề mô tả triệu chứng rồi hỏi nguyên nhân/biện pháp. Luôn theo chu trình:
 >
 > **Measure → identify bottleneck → choose smallest effective optimization → benchmark → monitor regression.**
 
@@ -694,3 +694,254 @@ Không nhìn tài liệu, giải thích được:
 - [KQL data policies](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/data-policies)
 - [Spark Autotune](https://learn.microsoft.com/en-us/fabric/data-engineering/autotune)
 - [Runtime 2.0](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0)
+
+---
+
+# 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
+
+> **Vì sao có chương này:** *Optimize performance* là nhóm kỹ năng khó nhất của DP-700, vì đề gần như không bao giờ hỏi "V-Order là gì". Đề mô tả một **triệu chứng** rồi hỏi nguyên nhân hoặc biện pháp. Sai lầm phổ biến nhất là chọn "biện pháp nghe hợp lý" thay vì biện pháp **khớp đúng triệu chứng**. Chương này viết lại theo hướng **chẩn đoán trước, kê đơn sau**.
+> Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
+
+## A. NGUYÊN TẮC SỐ MỘT: ĐO TRƯỚC, TỐI ƯU SAU
+
+```text
+Triệu chứng  →  Công cụ chẩn đoán  →  Nguyên nhân  →  Biện pháp khớp nguyên nhân
+     ▲                                                        │
+     └──────────────── đo lại để xác nhận ────────────────────┘
+```
+
+Nếu một đáp án **nhảy thẳng từ triệu chứng sang biện pháp** mà không có bước chẩn đoán (ví dụ "chậm → scale lên SKU lớn hơn"), khả năng cao đó là đáp án bẫy. Fabric có bốn cửa chẩn đoán, và bạn phải chọn đúng cửa:
+
+| Vấn đề nằm ở | Mở công cụ nào |
+|---|---|
+| Một Spark notebook/job | **Spark UI** (Jobs → Stages → tasks, spill, skew) |
+| Một query T-SQL trong Warehouse | **Query Insights** + query plan |
+| Một query KQL trong Eventhouse | Query stats, caching policy, materialized view |
+| Một pipeline/Copy | Activity run detail (throughput, DIU, duration) |
+| **Nhiều thứ cùng chậm một lúc** | **Capacity Metrics App** (throttling/smoothing) |
+
+## B. BẢNG TRIỆU CHỨNG → CHẨN ĐOÁN → XỬ LÝ (học thuộc bảng này)
+
+| # | Triệu chứng trong đề | Chẩn đoán bằng | Nguyên nhân | Biện pháp đúng |
+|:--:|---|---|---|---|
+| 1 | Query Delta chậm dần theo thời gian; thư mục có hàng nghìn file nhỏ | Đếm file / Lakehouse maintenance | **Small file problem** | `OPTIMIZE` (định kỳ) |
+| 2 | Dung lượng OneLake phình to dù số dòng không tăng | Storage metrics | File cũ vẫn được giữ cho time travel | `VACUUM` (giữ ≥ retention, mặc định 7 ngày) |
+| 3 | Report Power BI Direct Lake chậm lúc cold, nhanh dần về sau | Direct Lake memory state | Chưa transcoding xong / thiếu V-Order | Bật **V-Order**, `OPTIMIZE ... VORDER`, tránh Overwrite |
+| 4 | Direct Lake bỗng chạy DirectQuery | `EVALUATE TABLETRAITS()` → `DirectLakeFallbackInfo` | RLS/CLS/DDM ở SQL endpoint, view, vượt guardrail | Gỡ RLS khỏi SQL endpoint (đưa RLS vào model), thay view bằng bảng, giảm số file/row group |
+| 5 | 1 task chạy 30 phút, 199 task chạy 2 giây | **Spark UI → Stages** (task duration min/median/max) | **Data skew** | Salting, `spark.sql.adaptive.skewJoin.enabled`, repartition, broadcast bảng nhỏ |
+| 6 | Stage Spark có cột spill lớn | **Spark UI → Stages/Executors** | Shuffle vượt RAM → **spill** ra disk | Giảm dữ liệu shuffle (lọc/chiếu sớm), chỉnh `spark.sql.shuffle.partitions`, tăng node size |
+| 7 | Join Spark chậm, một bảng rất nhỏ | Physical plan (`.explain()`) | Không dùng broadcast | **Broadcast join** (`broadcast(df)` hoặc chỉnh `autoBroadcastJoinThreshold`) |
+| 8 | Notebook mất vài phút mới bắt đầu chạy | Session start time | Đang dùng **custom pool** (khởi động nguội) | Starter pool cho dev; **high concurrency** để dùng lại session |
+| 9 | Copy activity chậm, tăng parallel không cải thiện | Activity output (throughput, DIU) | **Source hoặc sink đã bão hoà** | Lọc/chiếu ở nguồn, incremental thay full, partition nguồn; đừng tăng `parallelCopies` mù quáng |
+| 10 | Query Warehouse chậm ngay sau bulk load lớn | **Query Insights** + plan | Statistics lệch | `UPDATE STATISTICS` / `CREATE STATISTICS` cho cột filter/join |
+| 11 | Query Warehouse tốn RAM bất thường, có spill | Plan + kiểu cột | `VARCHAR(MAX)` hoặc kiểu quá rộng | Khai báo độ dài sát thực tế |
+| 12 | Query KQL trên dữ liệu 90 ngày rất chậm, 7 ngày rất nhanh | Query stats | Dữ liệu ngoài **hot cache** | Tăng **caching policy** (không phải retention) |
+| 13 | Eventhouse ingest trễ | Ingestion metrics / capacity planner | Batching policy hoặc thiếu tài nguyên | Chỉnh ingestion (streaming vs batching), xem capacity |
+| 14 | Toàn bộ workspace chậm cùng lúc mỗi sáng 9h | **Capacity Metrics** (timepoint, background vs interactive) | **Throttling do trùng giờ cao điểm** | Dời lịch job nặng, scale-up SKU, surge protection |
+| 15 | Pipeline fail ngay khi trigger vào giờ cao điểm | Capacity Metrics | **Background rejection** (giai đoạn throttling nặng) | Giảm tải, dời lịch, scale-up |
+
+> 📌 Cách dùng bảng này để luyện: che cột "Biện pháp đúng", đọc cột triệu chứng và tự nói ra chẩn đoán + biện pháp. Đây gần như là mô phỏng chính xác dạng câu hỏi của phần Optimize.
+
+## C. CAPACITY: SMOOTHING, BURSTING, THROTTLING — HIỂU CƠ CHẾ, ĐỪNG HỌC SỐ
+
+```text
+Job chạy  →  tiêu thụ CU
+              │
+              ├── BURSTING: cho phép dùng nhiều CU hơn baseline trong thời gian ngắn
+              │              (để job ngắn chạy nhanh)
+              │
+              └── SMOOTHING: phần CU đã dùng được TRẢI RA theo thời gian
+                             ├── Interactive (query Power BI, ad-hoc): trải theo phút
+                             └── Background (pipeline theo lịch, Spark job, scheduled refresh): trải 24 GIỜ
+
+Nếu tổng mức tiêu thụ đã trải vượt quá capacity trong tương lai:
+   Giai đoạn 1  →  INTERACTIVE DELAY        (thêm độ trễ cho thao tác tương tác)
+   Giai đoạn 2  →  INTERACTIVE REJECTION    (chặn request tương tác mới; background vẫn chạy)
+   Giai đoạn 3  →  BACKGROUND REJECTION     (chặn cả background)
+```
+
+**Ba hệ quả hay được hỏi:**
+
+1. **Vượt 100% không có nghĩa là bị chặn ngay.** Có overage protection cho phép "vay" một khoảng capacity tương lai. Đáp án "CU > 100% nên job bị reject" thường sai.
+2. **Background trải 24 giờ** nghĩa là một job Spark nặng lúc 2h sáng vẫn có thể ảnh hưởng tới capacity buổi chiều.
+3. **Scale-up SKU có hiệu lực gần như tức thì** — đây là biện pháp cấp cứu hợp lệ khi capacity đang bị throttle nặng; nhưng nếu nguyên nhân là skew/small files thì scale chỉ đốt tiền.
+
+## D. LAKEHOUSE/DELTA — SÁU KỸ THUẬT, DÙNG ĐÚNG CHỖ
+
+| Kỹ thuật | Câu hỏi nó trả lời | Lưu ý thi |
+|---|---|---|
+| `OPTIMIZE` | "Quá nhiều file nhỏ" | Chỉ chạy được từ **Spark** (notebook/job/maintenance UI), **không** chạy từ SQL analytics endpoint |
+| `VACUUM` | "Thu hồi dung lượng" | Mặc định giữ 7 ngày; đặt quá ngắn phá time travel và có thể gây lỗi cho reader đang chạy |
+| **V-Order** | "Đọc nhanh hơn cho Direct Lake/VertiPaq" | **Tắt mặc định ở workspace mới**; ghi chậm hơn ~15%, nén tốt hơn |
+| **Z-Order** | "Data skipping theo vài cột hay lọc" | `OPTIMIZE t ZORDER BY (col1, col2)`; chọn ít cột |
+| **Partitioning** | "Cắt bớt dữ liệu quét" | Chỉ partition theo cột **low-cardinality** (ngày, vùng). Partition sai tạo ra chính vấn đề small files |
+| **Liquid clustering** | "Thay thế partition + Z-Order, linh hoạt" | `CLUSTER BY (...)`; **không** dùng chung với partitioning/Z-Order trên cùng bảng |
+
+**Lịch bảo trì gợi ý (hay xuất hiện trong câu hỏi thiết kế):**
+
+```text
+OPTIMIZE   bảng giá trị cao, ghi nhiều   → hằng đêm hoặc hằng tuần
+Z-ORDER    bảng có query pattern ổn định → hằng tuần/tháng
+VACUUM     mọi bảng                      → hằng tháng, giữ retention mặc định
+```
+
+Trong pipeline, dùng **Lakehouse Maintenance activity** để chạy Optimize/Vacuum theo lịch thay vì tự viết notebook.
+
+## E. DIRECT LAKE — BỐN KHÁI NIỆM PHẢI PHÂN BIỆT
+
+```text
+TRANSCODING   Nạp DỮ LIỆU theo cột từ OneLake vào cache VertiPaq,
+              chỉ khi query chạm cột đó lần đầu.
+              Trạng thái bộ nhớ: cold → semiwarm → warm → hot
+
+FRAMING       Thao tác lúc refresh: đọc METADATA Delta, chốt tập file Parquet
+              mà model được phép nhìn thấy. Query chỉ thấy dữ liệu tại thời điểm
+              framing gần nhất — không nhất thiết là mới nhất.
+
+FALLBACK      Direct Lake ON SQL ENDPOINT chuyển sang DirectQuery khi gặp:
+              RLS/CLS/DDM ở tầng SQL · view chưa materialize · vượt guardrail SKU
+              → chậm hơn nhiều.
+              Direct Lake ON ONELAKE chạy DirectLakeOnly: KHÔNG fallback, nó BÁO LỖI.
+
+GUARDRAIL     Giới hạn theo SKU về số parquet file / row group / số dòng.
+              Một bảng vượt guardrail có thể làm cả model mất chế độ Direct Lake.
+```
+
+**Cách chẩn đoán fallback:** chạy DAX `EVALUATE TABLETRAITS()` và đọc cột `DirectLakeFallbackInfo` (giá trị `None` nghĩa là đang chạy Direct Lake thật).
+
+**Thiết lập `DirectLakeBehavior` (chỉ áp dụng cho Direct Lake on SQL endpoint):**
+
+| Giá trị | Hành vi | Dùng khi |
+|---|---|---|
+| `Automatic` (mặc định) | Fallback im lặng sang DirectQuery | Production |
+| `DirectLakeOnly` | Báo lỗi thay vì fallback | **Dev** — để phát hiện nguyên nhân fallback |
+| `DirectQueryOnly` | Luôn DirectQuery | Đo hiệu năng đối chứng |
+
+**Bốn quy tắc vận hành để giữ Direct Lake nhanh:**
+
+1. Áp **V-Order** cho bảng Gold.
+2. Nhắm row group khoảng **1–16 triệu dòng**; chạy `OPTIMIZE` thưa (cuối tuần/cuối tháng) vì nó làm invalidate segment đang nằm trong bộ nhớ.
+3. **Tránh Overwrite toàn bảng** — nó khiến model về cold. Ưu tiên append/MERGE.
+4. Partition theo cột **low-cardinality** (dưới khoảng 100–200 giá trị).
+
+## F. SPARK — NĂM ĐÒN BẨY
+
+| Đòn bẩy | Khi nào dùng | Bẫy |
+|---|---|---|
+| **Broadcast join** | Một bảng đủ nhỏ để nhân bản sang mọi executor | Broadcast bảng quá lớn gây OOM |
+| **AQE** (adaptive query execution) | Bật sẵn; xử lý skew join, gộp partition sau shuffle | Không thay được việc sửa skew nghiêm trọng bằng salting |
+| **Partition tuning** | `spark.sql.shuffle.partitions` quá cao → nhiều task tí hon; quá thấp → spill | Không có con số vạn năng; đo rồi chỉnh |
+| **High concurrency** | Nhiều notebook cùng một user, cấu hình tương thích → dùng lại session | Không chia sẻ giữa hai user; không đi cùng Autotune |
+| **Native Execution Engine (NEE)** | Tăng tốc vectorized (Velox/Gluten, C++) | Bật ở cấp **Environment** (Spark compute → Acceleration) |
+
+> ⚠️ **Autotune** là **Preview, tắt mặc định**, và theo tài liệu hiện hành chỉ tương thích **Runtime 1.2**; không chạy khi bật high concurrency. Đáp án "bật Autotune cho production Runtime mới nhất" là bẫy.
+
+**Nhận diện skew và spill trên Spark UI — đọc đúng chỗ:**
+
+```text
+Spark UI → Stages → chọn stage chậm → bảng "Summary Metrics for Tasks"
+    Duration:  Min | 25th | Median | 75th | Max
+               2s  | 2s   | 3s     | 4s   | 30 phút   ← Max lệch hẳn = SKEW
+    Spill (memory) / Spill (disk):  > 0  ← thiếu RAM cho shuffle
+```
+
+## G. WAREHOUSE & EVENTHOUSE — GẠCH ĐẦU DÒNG PHẢI THUỘC
+
+**Warehouse:**
+
+- Đo trước bằng **Query Insights**: `queryinsights.exec_requests_history`, `frequently_run_queries`, `long_running_queries`; DMV `sys.dm_exec_requests`, `sys.dm_exec_sessions`.
+- **Statistics**: tự động, nhưng sau bulk load lớn nên `UPDATE STATISTICS` thủ công.
+- **Kiểu dữ liệu**: tránh `VARCHAR(MAX)`/kiểu quá rộng — bộ nhớ cấp theo khai báo, không theo dữ liệu thực.
+- **Warehouse không hỗ trợ materialized view.** Materialized **Lake** View là tính năng của Lakehouse/Spark.
+- Load bằng **CTAS / `COPY INTO`**, tránh `INSERT` từng dòng.
+
+**Eventhouse/KQL:**
+
+- **Caching policy (hot cache)** quyết định **tốc độ**; **retention policy** quyết định **giữ bao lâu**. Nhầm hai cái này là lỗi kinh điển.
+- **Materialized view** trong KQL để dựng sẵn kết quả tổng hợp hay dùng.
+- **Update policy** để biến đổi ngay lúc ingest; nhớ giới hạn không join khi source có streaming ingestion policy.
+- **Partitioning policy** cho bảng rất lớn; **query acceleration** cho OneLake shortcut khi cần tốc độ mà vẫn zero-copy.
+
+## H. ACTIVE RECALL — 14 CÂU (che đáp án, nói thành tiếng)
+
+<details><summary><b>1.</b> Bước đầu tiên khi đề mô tả "chậm" là gì?</summary>
+
+**Chẩn đoán**, không phải tối ưu. Xác định vấn đề nằm ở một job hay ở cả capacity, rồi mở đúng công cụ (Spark UI / Query Insights / Capacity Metrics / activity run detail).
+</details>
+
+<details><summary><b>2.</b> `OPTIMIZE` chạy được từ SQL analytics endpoint không?</summary>
+
+**Không.** Chỉ chạy từ Spark (notebook, Spark job, Lakehouse maintenance UI) hoặc Lakehouse Maintenance activity trong pipeline.
+</details>
+
+<details><summary><b>3.</b> `OPTIMIZE` có làm giảm dung lượng lưu trữ không?</summary>
+
+**Không** — nó tạo file mới đã gộp, file cũ vẫn giữ cho time travel nên dung lượng còn tăng. Muốn thu hồi phải `VACUUM`.
+</details>
+
+<details><summary><b>4.</b> V-Order đánh đổi cái gì, và mặc định ở workspace mới?</summary>
+
+Ghi chậm hơn khoảng 15% để đọc nhanh hơn (đặc biệt Direct Lake), nén tốt hơn. **Tắt mặc định ở workspace mới**.
+</details>
+
+<details><summary><b>5.</b> Ba nguyên nhân phổ biến của Direct Lake fallback?</summary>
+
+RLS/CLS/DDM ở tầng SQL endpoint; model trỏ vào view; bảng vượt guardrail SKU. Direct Lake on OneLake thì báo lỗi thay vì fallback.
+</details>
+
+<details><summary><b>6.</b> Transcoding và framing khác nhau thế nào?</summary>
+
+Transcoding nạp **dữ liệu** cột vào cache VertiPaq khi query chạm lần đầu. Framing cập nhật **metadata** để chốt tập file Delta model được nhìn thấy tại thời điểm refresh.
+</details>
+
+<details><summary><b>7.</b> Vì sao Overwrite toàn bảng hại cho Direct Lake?</summary>
+
+Nó thay toàn bộ file/Delta log → cột đang resident bị evict → model về cold → query đầu tiên chậm. Ưu tiên append/MERGE/incremental.
+</details>
+
+<details><summary><b>8.</b> Nhìn ở đâu để khẳng định có data skew?</summary>
+
+Spark UI → Stages → Summary Metrics for Tasks: **Max duration lệch hẳn** so với median. Xử lý bằng salting, AQE skew join, repartition, broadcast.
+</details>
+
+<details><summary><b>9.</b> Spill là gì và sửa thế nào?</summary>
+
+Shuffle/aggregation vượt RAM nên tràn xuống disk. Sửa bằng cách giảm dữ liệu shuffle (lọc/chiếu sớm), chỉnh số shuffle partitions, tránh cột thừa, tăng node size khi thật cần.
+</details>
+
+<details><summary><b>10.</b> Tăng `parallelCopies` lên tối đa có luôn nhanh hơn không?</summary>
+
+Không. Throughput ≈ min(source, network, destination, copy compute). Nếu source/sink đã bão hoà thì tăng song song chỉ gây throttle và lỗi.
+</details>
+
+<details><summary><b>11.</b> Warehouse: khi nào chạy `UPDATE STATISTICS` thủ công?</summary>
+
+Sau bulk load rất lớn hoặc khi phân phối dữ liệu đổi đột ngột, khiến optimizer chọn plan lệch.
+</details>
+
+<details><summary><b>12.</b> Query KQL chậm với dải thời gian dài — chỉnh policy nào?</summary>
+
+**Caching policy (hot cache)**, không phải retention. Retention chỉ quyết định giữ dữ liệu bao lâu.
+</details>
+
+<details><summary><b>13.</b> Ba giai đoạn throttling theo thứ tự?</summary>
+
+Interactive delay → interactive rejection → background rejection. Trước đó có overage protection cho phép vay capacity tương lai.
+</details>
+
+<details><summary><b>14.</b> Vì sao "scale-up SKU" không phải đáp án mặc định cho mọi câu hỏi chậm?</summary>
+
+Vì nó không sửa nguyên nhân khi vấn đề là skew, small files, statistics lệch hay fallback. Chỉ hợp lý khi chẩn đoán cho thấy capacity thật sự thiếu.
+</details>
+
+## I. MINI-LAB 90 PHÚT — TẠO TRIỆU CHỨNG RỒI CHỮA
+
+1. **Tạo small file problem:** ghi 200 lần, mỗi lần vài dòng, vào một bảng Delta. Đếm số file. Chạy một query aggregate, ghi lại thời gian.
+2. Chạy `OPTIMIZE`, đếm lại file, chạy lại query → so sánh thời gian. Sau đó `DESCRIBE HISTORY` để xem operation.
+3. Chạy `VACUUM ... RETAIN 168 HOURS`, kiểm tra dung lượng trước/sau. Giải thích bằng lời vì sao `OPTIMIZE` không giảm dung lượng.
+4. **Tạo skew:** dựng bảng có 90% dòng cùng một key, join với bảng khác. Mở Spark UI → Stages, chỉ ra ô số liệu chứng minh skew. Áp salting hoặc broadcast, đo lại.
+5. **Direct Lake:** tạo semantic model Direct Lake trên bảng Gold. Chạy `EVALUATE TABLETRAITS()` xem `DirectLakeFallbackInfo`. Thêm RLS ở SQL endpoint → chạy lại → quan sát thay đổi. Gỡ RLS ra.
+6. **Warehouse:** load một bảng lớn, chạy query trước và sau `UPDATE STATISTICS`; đọc `queryinsights.long_running_queries`.
+7. **Capacity:** mở Capacity Metrics App, tìm timepoint tiêu thụ cao nhất trong 14 ngày, xác định operation nào gây ra, phân loại interactive hay background.
+
+**Ngưỡng đạt:** che cột cuối của bảng mục B và tự nói đúng biện pháp cho ≥13/15 triệu chứng; trả lời đúng ≥13/14 câu ở mục H.

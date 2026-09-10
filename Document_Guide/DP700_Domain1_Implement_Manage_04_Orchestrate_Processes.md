@@ -1067,3 +1067,182 @@ target  = DeltaTable.forName(spark, target_table)
 
 > [!TIP]
 > Tham khảo: [Metadata-driven pipeline tutorial](https://learn.microsoft.com/en-us/fabric/data-factory/tutorial-metadata-driven-pipeline) và [Pipeline expressions](https://learn.microsoft.com/en-us/fabric/data-factory/expression-language)
+
+---
+
+# 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
+
+> **Vì sao có chương này:** *Orchestrate processes* chỉ có 3 objective nhưng **xuất hiện xuyên suốt case study** — hầu như case study nào cũng có một pipeline. Điều đề kiểm tra nhiều nhất là **chọn đúng công cụ** và **đọc/viết được expression**. Chương này viết lại theo hướng dễ nhớ + tự kiểm tra.
+> Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
+
+## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
+
+```text
+       PIPELINE = NHẠC TRƯỞNG                 (điều phối: gọi ai, khi nào, nếu lỗi thì sao)
+             │
+    ┌────────┼────────────┬──────────────┐
+    ▼        ▼            ▼              ▼
+  COPY    DATAFLOW     NOTEBOOK      STORED PROC / các activity khác
+ (chuyển  GEN2         (Spark:       (T-SQL trong Warehouse)
+  dữ liệu) (Power Query  logic
+           low-code)     phức tạp)
+
+  = NHẠC CÔNG (mỗi người làm một việc, không ai kiêm nhạc trưởng)
+```
+
+**Câu chốt:** Pipeline **không tự transform** — nó gọi thứ khác làm. Đáp án "dùng pipeline để làm sạch dữ liệu phức tạp" là sai; pipeline gọi **notebook** hoặc **dataflow** để làm việc đó.
+
+## B. CHỌN CÔNG CỤ — BA CÂU HỎI
+
+| Câu hỏi | Nếu CÓ | Nếu KHÔNG |
+|---|---|---|
+| Có cần điều phối nhiều bước, rẽ nhánh, retry, thông báo? | **Data Pipeline** | Xem tiếp |
+| Người làm có phải citizen dev, muốn kéo-thả Power Query? | **Dataflow Gen2** | Xem tiếp |
+| Logic có phức tạp (JSON lồng, ML, MERGE, UDF)? | **Notebook (Spark)** | Copy Job / Copy activity là đủ |
+
+**Bảng đối chiếu nhanh:**
+
+| | Dataflow Gen2 | Data Pipeline | Notebook |
+|---|---|---|---|
+| Vai trò | Transform low-code | **Điều phối** | Transform code-first |
+| Engine | Mashup (M) | Copy runtime + gọi item khác | Spark |
+| Mạnh nhất ở | Nhiều nguồn nhỏ, chuẩn hoá | Lịch, rẽ nhánh, ForEach, alert | Semi-structured, ML, MERGE |
+| Không nên dùng để | Xử lý khối lượng rất lớn | Tự transform | Việc đơn giản mà Copy làm được rẻ hơn |
+
+## C. LỊCH CHẠY VÀ TRIGGER
+
+```text
+1. THỦ CÔNG (on-demand)     → chạy tay khi cần
+2. SCHEDULE                 → "mỗi N phút/giờ/ngày", theo giờ cố định
+3. EVENT-BASED TRIGGER      → khi CÓ SỰ KIỆN xảy ra
+                              ├── file đến trong OneLake/storage
+                              └── job event (item chạy xong/lỗi) qua Real-Time hub / Activator
+```
+
+> 📌 Phản xạ: đề nói **"khi file được tải lên"** → event trigger. Đề nói **"mỗi 15 phút"** → schedule. Đừng chọn schedule chạy dày để mô phỏng event — đó là đáp án tốn CU và bị loại bởi tiêu chí "minimize cost".
+
+## D. EXPRESSION — PHẢI ĐỌC VÀ VIẾT ĐƯỢC
+
+```text
+@pipeline().RunId                    id của lần chạy hiện tại (dùng cho log/truy vết)
+@pipeline().TriggerTime              thời điểm trigger
+@activity('Lookup1').output.firstRow.WatermarkValue     lấy giá trị từ activity trước
+@item()                              phần tử hiện tại trong ForEach
+@item().TableName                    thuộc tính của phần tử đó
+@concat('SELECT * FROM ', item().TableName)             ghép chuỗi
+@coalesce(pipeline().parameters.p1, 'default')          lấy giá trị đầu tiên khác null
+@if(greater(activity('X').output.count, 0), 'yes', 'no') rẽ nhánh trong biểu thức
+@utcnow()                            thời gian UTC hiện tại
+```
+
+**Bốn dependency condition:**
+
+```text
+Success     → chỉ chạy khi bước trước THÀNH CÔNG
+Failure     → chỉ chạy khi bước trước THẤT BẠI   (gửi cảnh báo, ghi log lỗi)
+Completion  → chạy DÙ thành công hay thất bại      (dọn dẹp, ghi log kết thúc)
+Skipped     → chạy khi bước trước BỊ BỎ QUA
+```
+
+## E. HAI PATTERN PHẢI THUỘC
+
+**Pattern 1 — Metadata-driven (một pipeline chạy cho N bảng):**
+
+```text
+Lookup (đọc bảng cấu hình: danh sách bảng cần nạp)
+   └─► ForEach (@activity('Lookup').output.value)
+          └─► Copy activity  source = @item().SourceTable
+                             sink   = @item().TargetTable
+```
+
+Ưu điểm: thêm bảng mới chỉ cần thêm một dòng cấu hình, không sửa pipeline. `Batch Count` của ForEach điều chỉnh mức song song — đặt vừa phải (thường 4–5) để không gây tranh chấp tài nguyên.
+
+**Pattern 2 — Watermark có commit an toàn:**
+
+```text
+Lookup watermark cũ ──► Lookup watermark mới (MAX ở nguồn) ──► Copy/Notebook (MERGE)
+                                                                      │ Success
+                                                                      ▼
+                                                        Stored Procedure: cập nhật watermark
+```
+
+Điểm mấu chốt: bước cập nhật watermark nối bằng **Success**, đặt ở **cuối**. Không bao giờ cập nhật watermark bên trong notebook trước khi toàn bộ pipeline thành công.
+
+## F. TRUYỀN THAM SỐ VÀ NHẬN KẾT QUẢ
+
+```python
+# Trong notebook: đánh dấu cell này là "Parameters cell" (Toggle parameter cell)
+table_name = "default_table"      # pipeline sẽ ghi đè giá trị này
+run_date   = "1900-01-01"
+
+# ... xử lý ...
+
+# Trả kết quả về pipeline
+import notebookutils
+notebookutils.notebook.exit(str(row_count))
+```
+
+> 📌 Pipeline đọc giá trị này qua output của activity Notebook. Lưu ý `getActivityOutput` chỉ lấy được output của activity **thành công** — muốn truyền ngữ cảnh lỗi, dùng activity **Fail** với thông báo chứa tên entity và run id.
+
+## G. ACTIVE RECALL — 10 CÂU (che đáp án, nói thành tiếng)
+
+<details><summary><b>1.</b> Pipeline có tự transform dữ liệu không?</summary>
+
+**Không.** Pipeline điều phối; việc transform do notebook (Spark), dataflow (Power Query) hoặc stored procedure (T-SQL) làm.
+</details>
+
+<details><summary><b>2.</b> Ba cách kích hoạt một pipeline?</summary>
+
+Thủ công, **schedule**, và **event-based trigger** (file đến trong OneLake/storage, hoặc job event qua Real-Time hub/Activator).
+</details>
+
+<details><summary><b>3.</b> Bốn dependency condition và cái nào dùng cho bước dọn dẹp?</summary>
+
+Success, Failure, Completion, Skipped. Bước dọn dẹp/ghi log luôn chạy → **Completion**.
+</details>
+
+<details><summary><b>4.</b> Viết biểu thức lấy giá trị `WatermarkValue` từ activity Lookup tên `LookupWM`.</summary>
+
+`@activity('LookupWM').output.firstRow.WatermarkValue`
+</details>
+
+<details><summary><b>5.</b> `@item()` dùng ở đâu?</summary>
+
+Bên trong **ForEach**, đại diện phần tử hiện tại của mảng đang lặp; truy cập thuộc tính bằng `@item().ColumnName`.
+</details>
+
+<details><summary><b>6.</b> Metadata-driven pipeline là gì và lợi ích?</summary>
+
+Lookup bảng cấu hình → ForEach → Copy theo `@item()`. Thêm bảng mới chỉ cần thêm dòng cấu hình, không sửa pipeline.
+</details>
+
+<details><summary><b>7.</b> Watermark nên được cập nhật ở bước nào của pipeline?</summary>
+
+Bước **cuối cùng**, nối bằng **Success** sau khi toàn bộ quá trình load thành công.
+</details>
+
+<details><summary><b>8.</b> Notebook trả giá trị về pipeline bằng gì?</summary>
+
+`notebookutils.notebook.exit(value)`; pipeline đọc qua output của activity Notebook.
+</details>
+
+<details><summary><b>9.</b> "Chạy pipeline mỗi khi có file mới trong storage" — chọn gì?</summary>
+
+**Event-based trigger**, không phải schedule chạy dày.
+</details>
+
+<details><summary><b>10.</b> `Batch Count` của ForEach ảnh hưởng gì?</summary>
+
+Mức **song song** của vòng lặp. Đặt quá cao gây tranh chấp tài nguyên/throttling; thường 4–5 là cân bằng.
+</details>
+
+## H. MINI-LAB 45 PHÚT
+
+1. Tạo bảng cấu hình gồm 3 dòng (`SourceTable`, `TargetTable`).
+2. Dựng pipeline **Lookup → ForEach → Copy** dùng `@item()`. Chạy và xác nhận cả 3 bảng được nạp.
+3. Thêm nhánh **Failure** gửi cảnh báo và một activity **Completion** ghi log. Cố tình làm một bảng lỗi để thấy cả hai nhánh chạy.
+4. Thêm pattern watermark: Lookup cũ → Lookup mới → Copy → Stored Procedure cập nhật watermark (nối bằng **Success**). Chạy 2 lần, xác nhận lần 2 không nạp lại.
+5. Tạo notebook có **Parameters cell**, nhận `table_name` từ pipeline và trả về số dòng bằng `notebook.exit()`. Đọc giá trị đó ở activity kế tiếp.
+6. Đặt **schedule** chạy mỗi giờ; sau đó thử tạo một **event trigger** khi file đến OneLake và so sánh hai cơ chế.
+
+**Ngưỡng đạt:** viết lại 5 biểu thức ở mục D từ trí nhớ và trả lời đúng ≥9/10 câu ở mục G.

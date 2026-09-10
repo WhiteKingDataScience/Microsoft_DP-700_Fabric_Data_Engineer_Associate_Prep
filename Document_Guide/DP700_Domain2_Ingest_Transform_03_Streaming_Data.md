@@ -1416,3 +1416,284 @@ KQL bin() = fixed bucket cho summarize, không phải toàn bộ Stream Analytic
 - [OneLake shortcuts in KQL database](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/onelake-shortcuts)
 
 ---
+
+---
+
+# 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
+
+> **Vì sao có chương này:** *Ingest and transform streaming data* có **7 objective** và là phần nhiều thí sinh bỏ qua vì nghĩ "mình giỏi Spark/SQL là đủ". Thực tế đề hỏi rất sâu về Eventstream, windowing, checkpoint và KQL — kể cả với người mạnh batch. Chương này viết lại theo hướng **hình dung được luồng dữ liệu + phản xạ chọn engine + tự kiểm tra**.
+> Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
+
+## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
+
+Streaming trong Fabric chỉ có **ba đường**, và mỗi đường trả lời một loại yêu cầu:
+
+```text
+ ĐƯỜNG 1 — EVENTSTREAM (no-code)
+ Event Hub / IoT / Kafka / HTTP / CDC ──► Eventstream ──► Eventhouse (KQL)
+                                              │            Lakehouse (Delta)
+                                              │            Warehouse
+                                              │            Activator (cảnh báo)
+                                              └──► Derived stream (publish lại vào Real-Time hub)
+   Transform tại chỗ: filter, manage fields, aggregate (có windowing), join, dedup, routing
+
+ ĐƯỜNG 2 — SPARK STRUCTURED STREAMING (code-first)
+ readStream ──► withWatermark ──► window/agg/join ──► foreachBatch(MERGE) ──► writeStream
+   Bắt buộc: checkpointLocation DUY NHẤT cho mỗi query
+
+ ĐƯỜNG 3 — KQL TRONG EVENTHOUSE (khai báo)
+ Bảng nguồn ──[update policy]──► Bảng đích đã transform
+   Materialized view cho tổng hợp; caching policy cho tốc độ
+```
+
+**Ba câu chốt:**
+
+1. **Eventstream** = ít code nhất, nhiều đích nhất → chọn khi đề nói "no-code", "route tới nhiều nơi".
+2. **Structured Streaming** = mạnh nhất → chọn khi cần join dimension, logic phức tạp, MERGE idempotent, ML.
+3. **KQL update policy** = biến đổi **ngay lúc ingest** trong Eventhouse, không cần engine ngoài.
+
+## B. AT-LEAST-ONCE — HỆ QUẢ QUAN TRỌNG NHẤT CỦA CẢ MỤC NÀY
+
+```text
+Eventstream đảm bảo AT-LEAST-ONCE  →  MỘT EVENT CÓ THỂ TỚI ĐÍCH NHIỀU LẦN
+
+Không có công tắc "exactly-once". Phải tự khử trùng ở ĐÍCH:
+
+  Đích là Eventhouse (KQL)      →  arg_max() theo event id khi truy vấn
+                                   hoặc tag ingest_if_not_exists khi ingest
+  Đích là Lakehouse (Delta)     →  Delta MERGE theo event id trong notebook/foreachBatch
+```
+
+> 📌 Đáp án "bật exactly-once trên Eventstream" là **bẫy**. Không tồn tại tuỳ chọn đó.
+
+## C. BỐN LOẠI WINDOW — HÌNH DUNG RỒI MỚI NHỚ
+
+```text
+Trục thời gian:  0────5────10───15───20 (phút)
+
+TUMBLING size=5        |####|####|####|####|
+  Cố định, KHÔNG chồng lấn. Mỗi event thuộc ĐÚNG MỘT window.
+  → "Đếm số đơn hàng mỗi 5 phút"
+
+HOPPING size=10 hop=5  |#########|
+                            |#########|
+                                 |#########|
+  Cố định, CÓ chồng lấn. Mỗi event có thể thuộc NHIỀU window.
+  → "Trung bình trượt 10 phút, cập nhật mỗi 5 phút"
+
+SLIDING                Window sinh ra/kết thúc theo sự kiện vào-ra, trượt liên tục.
+  → "Cảnh báo khi có hơn 3 lỗi trong BẤT KỲ khoảng 60 giây nào"
+
+SESSION timeout=2      |## ## #|      (im lặng > 2 phút)      |### #|
+  Gom event cho tới khi im lặng quá ngưỡng. Độ dài window KHÔNG cố định.
+  → "Một phiên hoạt động của người dùng"
+```
+
+**Bảng nhận diện theo từ khoá trong đề:**
+
+| Đề nói | Window |
+|---|---|
+| "every 5 minutes", "mỗi 5 phút một lần tổng hợp" | **Tumbling** |
+| "moving average", "cứ mỗi 1 phút, tính cho 5 phút gần nhất" | **Hopping** |
+| "trong bất kỳ khoảng X nào", "liên tục" | **Sliding** |
+| "user session", "kết thúc khi ngừng hoạt động X phút" | **Session** |
+
+## D. SPARK STRUCTURED STREAMING — MẪU CODE PHẢI GÕ ĐƯỢC
+
+```python
+from pyspark.sql import functions as F
+from delta.tables import DeltaTable
+
+# 1. ĐỌC
+df = (spark.readStream
+      .format("cloudFiles")                    # hoặc "delta", "kafka", "eventhubs"
+      .option("cloudFiles.format", "json")
+      .schema(my_schema)                       # streaming nên khai báo schema rõ ràng
+      .load(bronze_path))
+
+# 2. WATERMARK + WINDOW (giới hạn state, xử lý dữ liệu tới muộn)
+agg = (df
+       .withWatermark("EventTime", "10 minutes")
+       .groupBy(F.window("EventTime", "5 minutes"), "SensorId")
+       .agg(F.avg("Temperature").alias("AvgTemp")))
+
+# 3. GHI IDEMPOTENT bằng foreachBatch + MERGE
+def upsert(batch_df, batch_id):
+    # dedup TRONG batch trước khi merge — nếu không, MERGE sẽ lỗi
+    dedup = batch_df.dropDuplicates(["SensorId", "window"])
+    tgt = DeltaTable.forName(spark, "silver.sensor_agg")
+    (tgt.alias("t")
+        .merge(dedup.alias("s"), "t.SensorId = s.SensorId AND t.window = s.window")
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute())
+
+(agg.writeStream
+    .foreachBatch(upsert)
+    .option("checkpointLocation", "Files/checkpoints/sensor_agg")   # DUY NHẤT cho query này
+    .trigger(availableNow=True)                                     # xử lý hết rồi dừng
+    .start())
+```
+
+**Bốn điểm đề hay hỏi trong đoạn code trên:**
+
+| Thành phần | Vai trò | Bẫy |
+|---|---|---|
+| `checkpointLocation` | Lưu offset + state để recovery, không xử lý lại dữ liệu đã commit | **Mỗi query một checkpoint riêng.** Dùng chung → state hỏng, kết quả sai |
+| `withWatermark` | Cho phép loại event tới quá muộn, giới hạn state | Thiếu watermark → state phình vô hạn |
+| `foreachBatch` + `MERGE` | Biến sink thành idempotent | Phải dedup **trong batch**, nếu không MERGE lỗi "multiple source rows matched" |
+| `trigger(availableNow=True)` | Chạy hết dữ liệu sẵn có rồi dừng — như batch | Tiết kiệm CU cho workload không cần chạy 24/7 |
+
+**Output mode — nhớ nhanh:**
+
+| Mode | Ghi gì | Dùng khi |
+|---|---|---|
+| `append` | Chỉ dòng mới | Không aggregate, hoặc aggregate có watermark đã chốt window |
+| `update` | Dòng có thay đổi từ lần trước | Aggregate cần cập nhật liên tục |
+| `complete` | Toàn bộ bảng kết quả mỗi lần | Aggregate nhỏ, cần bảng kết quả đầy đủ |
+
+## E. EVENTHOUSE / KQL — BỐN CHÍNH SÁCH ĐỪNG NHẦM
+
+| Policy | Trả lời câu hỏi | Bẫy hay gặp |
+|---|---|---|
+| **Caching (hot cache)** | Dữ liệu gần đây nào nằm trên SSD để query **nhanh** | Query chậm → tăng **caching**, không phải retention |
+| **Retention** | Giữ dữ liệu tổng cộng **bao lâu** | Retention không ảnh hưởng tốc độ |
+| **Update policy** | Biến đổi **ngay lúc ingest** từ bảng nguồn sang bảng đích | **Không join bảng khác** nếu source có streaming ingestion policy → dùng bảng trung gian |
+| **Ingestion (streaming vs batching)** | Dữ liệu vào **ngay** hay theo lô | "Dữ liệu chưa thấy ở bảng" có thể chỉ là đang chờ batching |
+
+**KQL tối thiểu phải gõ được:**
+
+```kusto
+// Tổng hợp theo cửa sổ thời gian (tương đương tumbling window)
+SensorData
+| where EventTime > ago(1h)
+| summarize AvgTemp = avg(Temperature), Cnt = count()
+        by bin(EventTime, 5m), SensorId
+
+// Khử trùng: giữ bản ghi mới nhất cho mỗi EventId
+SensorData
+| summarize arg_max(IngestionTime, *) by EventId
+
+// Chuỗi thời gian liên tục (cho anomaly detection)
+SensorData
+| make-series AvgTemp = avg(Temperature) default=0
+        on EventTime from ago(1d) to now() step 5m by SensorId
+```
+
+Toán tử bắt buộc thuộc: `where` (lọc dòng) · `project` / `project-away` (chọn/bỏ cột) · `extend` (thêm cột tính toán) · `summarize ... by bin(...)` (gom nhóm theo thời gian) · `join` · `make-series` · `arg_max`.
+
+## F. NATIVE TABLE vs SHORTCUT vs QUERY ACCELERATION
+
+```text
+                    Dữ liệu nằm ở đâu   Tốc độ query   Có nhân bản dữ liệu
+NATIVE TABLE        Trong Eventhouse    Nhanh nhất     Có
+SHORTCUT            Ở OneLake/Delta     Chậm hơn       Không (zero-copy)
+SHORTCUT + QUERY    Ở OneLake/Delta     Nhanh gần      Không copy, nhưng tốn
+ACCELERATION        + lớp tăng tốc      native         tài nguyên cho lớp tăng tốc
+```
+
+**Phản xạ:** đề đòi **tốc độ tối đa** và chấp nhận ingest → **native table**. Đề đòi **zero-copy** → shortcut. Đề đòi **cả hai** → **query acceleration**.
+
+## G. CHỌN ENGINE — CÂY QUYẾT ĐỊNH
+
+```text
+Có cần viết code không?
+├── KHÔNG  → cần route tới nhiều đích / transform nhẹ?  → EVENTSTREAM
+│            cần biến đổi ngay lúc ingest trong Eventhouse? → KQL UPDATE POLICY
+└── CÓ     → cần join với dimension, MERGE idempotent, ML, logic phức tạp?
+             → SPARK STRUCTURED STREAMING
+
+Dữ liệu đích là gì?
+├── Time-series / telemetry, cần query siêu nhanh theo thời gian  → EVENTHOUSE
+├── Delta, dùng chung với batch/medallion, dùng cho Direct Lake   → LAKEHOUSE
+└── Cần T-SQL đầy đủ, star schema                                 → WAREHOUSE
+
+Có cần chạy 24/7 không?
+├── Có   → streaming liên tục (trigger mặc định / real-time mode)
+└── Không → trigger(availableNow=True): xử lý hết rồi dừng, tiết kiệm CU
+```
+
+## H. ACTIVE RECALL — 14 CÂU (che đáp án, nói thành tiếng)
+
+<details><summary><b>1.</b> Eventstream đảm bảo delivery kiểu gì và hệ quả?</summary>
+
+**At-least-once** → event có thể trùng. Phải khử trùng ở đích: `arg_max()`/`ingest_if_not_exists` trong KQL, hoặc Delta `MERGE` theo event id.
+</details>
+
+<details><summary><b>2.</b> Derived stream để làm gì?</summary>
+
+Publish lại một luồng đã transform vào **Real-Time hub** để nhiều consumer dùng chung, thay vì mỗi bên tự transform lại.
+</details>
+
+<details><summary><b>3.</b> Bốn loại window và từ khoá nhận diện?</summary>
+
+Tumbling ("mỗi X phút") · Hopping ("mỗi X phút tính cho Y phút gần nhất") · Sliding ("trong bất kỳ khoảng X nào") · Session ("phiên, kết thúc khi im lặng").
+</details>
+
+<details><summary><b>4.</b> Tumbling và hopping khác nhau chỗ nào?</summary>
+
+Tumbling **không chồng lấn** (mỗi event thuộc đúng một window). Hopping có bước nhảy nhỏ hơn kích thước window nên **chồng lấn**, một event thuộc nhiều window.
+</details>
+
+<details><summary><b>5.</b> Quy tắc vàng của `checkpointLocation`?</summary>
+
+**Mỗi streaming query một checkpoint riêng biệt.** Dùng chung gây hỏng state và kết quả sai.
+</details>
+
+<details><summary><b>6.</b> `withWatermark` giải quyết vấn đề gì?</summary>
+
+Giới hạn **state** bằng cách bỏ qua event tới muộn hơn ngưỡng; cần thiết cho aggregation theo window và stateful join.
+</details>
+
+<details><summary><b>7.</b> `trigger(availableNow=True)` dùng khi nào?</summary>
+
+Khi muốn xử lý hết dữ liệu hiện có rồi **dừng** — chạy stream như batch, tiết kiệm CU cho workload không cần 24/7.
+</details>
+
+<details><summary><b>8.</b> Vì sao `foreachBatch` phải dedup trong batch trước khi MERGE?</summary>
+
+Vì nhiều dòng nguồn cùng match một dòng đích sẽ làm Delta `MERGE` **báo lỗi**; và at-least-once nên batch có thể chứa bản trùng.
+</details>
+
+<details><summary><b>9.</b> Ba output mode và khi nào dùng?</summary>
+
+`append` (chỉ dòng mới) · `update` (dòng thay đổi) · `complete` (toàn bộ bảng kết quả). Aggregate liên tục thường dùng `update`; aggregate có watermark đã chốt window dùng được `append`.
+</details>
+
+<details><summary><b>10.</b> Caching policy và retention policy — cái nào quyết định tốc độ?</summary>
+
+**Caching (hot cache)** quyết định tốc độ. Retention chỉ quyết định giữ dữ liệu bao lâu.
+</details>
+
+<details><summary><b>11.</b> Giới hạn quan trọng của KQL update policy?</summary>
+
+Nếu bảng nguồn có **streaming ingestion policy**, update policy **không được join** sang bảng khác. Giải pháp: bảng trung gian hoặc scheduled query.
+</details>
+
+<details><summary><b>12.</b> Native table, shortcut, query acceleration — chọn thế nào?</summary>
+
+Nhanh nhất và chấp nhận ingest → **native table**. Bắt buộc zero-copy → **shortcut**. Cần zero-copy nhưng vẫn nhanh → **query acceleration**.
+</details>
+
+<details><summary><b>13.</b> Eventstream có những đích nào?</summary>
+
+**Eventhouse (KQL)**, **Lakehouse (Delta)**, **Warehouse**, **Activator**, custom endpoint, và **eventstream khác** (fan-out).
+</details>
+
+<details><summary><b>14.</b> Không thấy dữ liệu ở bảng đích của Eventstream — kiểm tra theo thứ tự nào?</summary>
+
+Source có gửi → eventstream có nhận → processor/filter có loại hết → mapping/schema với bảng đích có khớp → ingestion policy (batching hay streaming) → update policy của bảng đích.
+</details>
+
+## I. MINI-LAB 90 PHÚT
+
+1. Tạo **Eventstream**, thêm nguồn sample data (ví dụ dữ liệu xe đạp/chứng khoán).
+2. Thêm **filter** (ví dụ `Speed > 20`) và một toán tử **aggregate có windowing**; thử lần lượt tumbling rồi hopping, quan sát khác biệt kết quả.
+3. Định tuyến **hai đích cùng lúc**: một vào **Eventhouse**, một vào **Lakehouse**. Xác nhận dữ liệu tới cả hai.
+4. Tạo một **derived stream** từ nhánh đã filter và publish vào Real-Time hub.
+5. Trong Eventhouse, viết KQL: `summarize avg(...) by bin(EventTime, 5m), Id`; sau đó viết truy vấn **khử trùng bằng `arg_max()`**.
+6. Tạo một **update policy** biến đổi từ bảng raw sang bảng đã làm sạch; kiểm tra dữ liệu tự xuất hiện ở bảng đích khi ingest.
+7. Viết notebook **Structured Streaming** đọc file JSON từ Files, có `withWatermark` + `window`, ghi bằng `foreachBatch` + `MERGE`, checkpoint riêng, `trigger(availableNow=True)`. Chạy hai lần và xác nhận **số dòng không đổi** ở lần hai.
+8. Cố tình dùng lại cùng một checkpoint cho hai query khác nhau để tận mắt thấy vì sao quy tắc "mỗi query một checkpoint" tồn tại.
+
+**Ngưỡng đạt:** vẽ lại được bốn loại window ở mục C từ trí nhớ, gõ lại được đoạn `foreachBatch` + `MERGE` ở mục D, và trả lời đúng ≥13/14 câu ở mục H.

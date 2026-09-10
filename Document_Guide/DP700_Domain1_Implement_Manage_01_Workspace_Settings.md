@@ -533,7 +533,7 @@ D. OneLake default tier
 | **Airflow Starter vs Custom** | Starter = intermittent/dev; Custom = always-on/production |
 | **Preview vs GA** | Không chọn feature chỉ vì mới; ưu tiên đúng requirement và compatibility |
 
-> **Điểm cá nhân cần khóa:** “Configure Fabric workspace settings” nằm trong Top 3 weakness của score report của bạn. Hãy luyện câu hỏi theo **scope**: Tenant → Domain → Capacity → Workspace → Item → Data, vì rất nhiều đáp án nhiễu chỉ khác nhau ở cấp cấu hình.
+> **Điểm cần khóa:** “Configure Fabric workspace settings” là objective nền của Domain 1 và rất hay bị mất điểm. Hãy luyện câu hỏi theo **scope**: Tenant → Domain → Capacity → Workspace → Item → Data, vì rất nhiều đáp án nhiễu chỉ khác nhau ở cấp cấu hình.
 
 ---
 
@@ -674,3 +674,189 @@ Bạn chưa nên coi phần này là “nắm chắc” nếu chưa tự trả l
 10. Khi feature còn Preview, tiêu chí nào quyết định có nên dùng production?
 
 **Ngưỡng khuyến nghị:** làm đúng ≥ 85% câu scenario mới, và tự cấu hình/lab được ít nhất Spark settings + OneLake lifecycle + Airflow pool decision trong tenant test.
+
+---
+
+# 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
+
+> **Vì sao có chương này:** *Configure Fabric workspace settings* là objective nền của Domain 1 — nó chi phối cách mọi item khác chạy, và là nơi thí sinh hay nhầm **tenant setting** với **workspace setting**, nhớ sai ma trận workspace role, hoặc chọn sai loại pool. Chương này viết lại phần cốt lõi theo hướng **dễ hiểu + phản xạ + tự kiểm tra**; nó không thay thế các mục ở trên mà là lối vào của chúng.
+> Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
+
+## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
+
+Hãy hình dung **workspace là một xưởng sản xuất** trong nhà máy Fabric:
+
+```text
+        TENANT (cả tập đoàn)
+          └── DOMAIN (một khối ngành: Sales, Finance)      ← nhóm workspace lại để quản trị
+                └── WORKSPACE (một xưởng)                   ← nơi bạn cấu hình 4 nhóm setting
+                      ├── Spark settings     → máy móc nào chạy (pool, runtime, environment)
+                      ├── OneLake settings   → kho lưu trữ của xưởng (tier, lifecycle, diagnostics)
+                      ├── Airflow settings   → tổ điều độ theo DAG (starter/custom pool)
+                      └── Domain assignment  → xưởng này thuộc khối ngành nào
+          └── CAPACITY (nguồn điện) — workspace phải được gán vào một capacity mới chạy được
+```
+
+Bốn bullet của objective này chính là bốn nhóm setting đó. Nếu bạn nhớ được sơ đồ trên, bạn đã trả lời được phần lớn câu hỏi "cấu hình ở đâu".
+
+**Câu hỏi phân định quan trọng nhất của cả objective:**
+
+> **"Setting này ở TENANT (Admin portal) hay ở WORKSPACE (Workspace settings)?"**
+
+| Nếu câu hỏi nói về… | Nó ở đâu |
+|---|---|
+| Cả tổ chức có được phép làm X không (ví dụ dùng app ngoài Fabric truy cập OneLake, tạo domain, bật preview toàn tenant) | **Tenant setting** — Admin portal |
+| Xưởng này dùng pool nào, runtime nào, environment mặc định nào, tier lưu trữ nào | **Workspace setting** |
+| Ai được vào xưởng và làm được gì | **Workspace role** (Manage access) |
+| Một item cụ thể được chia sẻ cho ai | **Item permission** |
+
+> 📌 Đáp án dạng "enable external app access in **Workspace settings > OneLake**" là **bẫy** — đó là tenant setting.
+
+## B. MA TRẬN WORKSPACE ROLE — HỌC BẰNG CÁCH VIẾT LẠI TỪ TRÍ NHỚ
+
+Đây là bảng bạn phải viết lại được **trên giấy trắng** trước khi thi:
+
+| Hành động | Admin | Member | Contributor | Viewer |
+|---|:---:|:---:|:---:|:---:|
+| Xoá workspace, đổi settings workspace | ✅ | ❌ | ❌ | ❌ |
+| Thêm/xoá người ở mọi role | ✅ | ⚠️ chỉ tới mức Member | ❌ | ❌ |
+| Tạo / sửa / xoá item | ✅ | ✅ | ✅ | ❌ |
+| Chạy notebook, chạy pipeline | ✅ | ✅ | ✅ | ❌ |
+| Publish app, chia sẻ item (Reshare) | ✅ | ✅ | ⚠️ chỉ khi được cấp Reshare ở item | ❌ |
+| Đọc dữ liệu qua SQL analytics endpoint | ✅ | ✅ | ✅ | ✅ (ReadData) |
+| **Bị OneLake RLS/CLS/DDM ràng buộc** | ❌ bypass | ❌ bypass | ❌ bypass | ✅ **bị ràng buộc** |
+
+Ba câu chốt phải thuộc:
+
+1. **Muốn test bảo mật dòng/cột → dùng tài khoản Viewer.** Test bằng Contributor sẽ luôn thấy hết dữ liệu và bạn sẽ tưởng RLS hỏng.
+2. **Viewer không chạy được notebook.** Nếu scenario bắt buộc user đọc dữ liệu bằng Spark, phải cấp quyền Execute trên notebook hoặc đổi access path.
+3. **ReadData ≠ ReadAll.** ReadData = đọc qua SQL endpoint. ReadAll = đọc file/bảng trực tiếp qua OneLake/Spark.
+
+## C. SPARK SETTINGS — BỐN QUYẾT ĐỊNH DUY NHẤT
+
+Đừng học màn hình. Học bốn quyết định:
+
+| Quyết định | Hai lựa chọn | Chọn khi nào |
+|---|---|---|
+| **Pool** | Starter pool ↔ Custom pool | Starter: dev/test, cần bắt đầu ngay, không cần tuỳ chỉnh. Custom: production, cần node size/autoscale riêng — đổi lại mất thời gian khởi động |
+| **Runtime** | GA (1.3) ↔ Preview (2.0) | Nhiều engine cùng đọc dữ liệu / cần ổn định → GA. Cần Spark 4.x, Delta mới, liquid clustering incremental → Runtime 2.0 (Preview) |
+| **Environment** | Không dùng ↔ Environment mặc định của workspace | Cần cùng bộ thư viện + Spark properties cho mọi notebook → tạo Environment và đặt làm default |
+| **High concurrency** | Tắt ↔ Bật | Bật khi nhiều notebook **cùng một user** có cấu hình tương thích chạy nối tiếp/song song → giảm thời gian khởi động session |
+
+**Bốn cái bẫy hay ra đề:**
+
+1. "Notebook mất 3 phút mới bắt đầu chạy mỗi lần" → đang dùng **custom pool**; muốn nhanh cho dev thì dùng starter pool (hoặc custom live pool nếu môi trường hỗ trợ).
+2. "Cần cùng thư viện Python cho cả team" → **Environment**, không phải `%pip install` trong từng notebook (`%pip install` chỉ có hiệu lực cho session hiện tại).
+3. "High concurrency để nhiều người dùng chung session" → **sai**, session chỉ chia sẻ trong phạm vi cùng một user.
+4. "Bật Autotune cho production Runtime 2.0" → **sai**, Autotune còn Preview, tắt mặc định, và theo tài liệu hiện hành giới hạn ở Runtime 1.2.
+
+## D. ONELAKE WORKSPACE SETTINGS — HIỂU BẰNG CHI PHÍ
+
+Chỉ cần nhớ một câu: **các setting OneLake ở workspace là để trả lời câu hỏi "dữ liệu của xưởng này được lưu ở tier nào và log ra sao".**
+
+```text
+File mới, đọc thường xuyên          → HOT
+Sau 30 ngày không sửa               → COOL     (rẻ hơn, đọc chậm/đắt hơn chút)
+Sau 90 ngày gần như không đọc       → COLD     (rẻ nhất)
+```
+
+- **Một policy cho mỗi workspace**, tối đa **10 rule**.
+- Rule dựa trên **created time / last modified / last accessed**.
+- Rule mới có thể cần tới ~24 giờ mới có hiệu lực.
+- Đây là **tiering để giảm chi phí**, **không phải xoá dữ liệu**. Đề hỏi "giảm chi phí lưu trữ nhưng vẫn giữ dữ liệu" → **Cool/Cold tier**, không phải VACUUM và cũng không phải xoá.
+
+## E. AIRFLOW SETTINGS — MỘT BẢNG LÀ ĐỦ
+
+| Câu hỏi trong đề | Đáp án |
+|---|---|
+| "DAG chạy vài lần mỗi ngày, tối ưu chi phí idle" | **Starter pool** (tự deprovision sau ~20 phút không hoạt động) |
+| "Scheduler phải luôn sẵn sàng, production 24×7" | **Custom pool** (always-on tới khi pause thủ công) |
+| "Item cần compute riêng khác mặc định workspace" | Workspace admin phải bật **customize compute configurations for items** |
+| "Yêu cầu kết nối qua private endpoint/VNet" | Theo tài liệu hiện hành, Fabric Airflow **chưa hỗ trợ** private network/VNet — không được giả định là đáp ứng |
+
+Đừng nhầm ba khái niệm cùng chứa chữ "variable/identity":
+
+- **Airflow Variable** = biến bên trong Airflow (`airflow.models.Variable`).
+- **Fabric Variable library** = item Fabric chứa cấu hình theo môi trường cho pipeline/notebook.
+- **Workspace identity** = danh tính dùng để xác thực, không phải setting của Airflow pool.
+
+## F. DOMAIN — BA CÂU HỎI LÀ ĐỦ
+
+1. **Domain để làm gì?** Nhóm workspace theo lĩnh vực nghiệp vụ để quản trị phân tán (federated governance).
+2. **Ai quản?** Fabric admin tạo domain; **domain admin** quản trị domain; **domain contributor** gán workspace vào domain.
+3. **Domain làm được gì đặc biệt?** Đặt **default sensitivity label**, nhận uỷ quyền một số tenant setting, và giúp lọc/khám phá nội dung theo ngành trong OneLake catalog.
+
+> 📌 Domain **không phải** cơ chế phân quyền dữ liệu. Nó là cơ chế **tổ chức và uỷ quyền quản trị**.
+
+## G. ACTIVE RECALL — 12 CÂU (che đáp án, nói thành tiếng)
+
+<details><summary><b>1.</b> Ai bị OneLake RLS ràng buộc, ai bypass?</summary>
+
+Viewer bị ràng buộc; Admin/Member/Contributor bypass. Muốn test RLS phải dùng Viewer.
+</details>
+
+<details><summary><b>2.</b> Contributor có Reshare được không?</summary>
+
+Không tự động. Workspace role Contributor không cấp Reshare, nhưng nếu được cấp quyền **Reshare** riêng ở item thì vẫn share được.
+</details>
+
+<details><summary><b>3.</b> Starter pool và custom pool — đánh đổi chính?</summary>
+
+Starter: khởi động rất nhanh (pre-warmed), cấu hình cố định. Custom: tuỳ chỉnh node/autoscale nhưng mất vài phút khởi động.
+</details>
+
+<details><summary><b>4.</b> `%pip install` có hiệu lực tới đâu?</summary>
+
+Chỉ trong **session hiện tại**. Muốn dùng chung cho cả workspace/team → cài trong **Environment**.
+</details>
+
+<details><summary><b>5.</b> High concurrency chia sẻ session giữa hai user được không?</summary>
+
+Không — chỉ trong phạm vi cùng một user, và các notebook phải tương thích về workspace/config/default lakehouse/libraries.
+</details>
+
+<details><summary><b>6.</b> OneLake lifecycle management: bao nhiêu policy, bao nhiêu rule, những tier nào?</summary>
+
+1 policy/workspace, tối đa 10 rule, tier **Hot / Cool / Cold**. Là tiering, không phải xoá dữ liệu.
+</details>
+
+<details><summary><b>7.</b> "Cho phép app ngoài Fabric truy cập OneLake" là setting ở đâu?</summary>
+
+**Tenant setting** trong Admin portal, không phải workspace setting.
+</details>
+
+<details><summary><b>8.</b> Airflow: DAG chạy 2 lần/ngày, muốn rẻ nhất — chọn gì?</summary>
+
+**Starter pool**, vì tự deprovision khi idle. Custom pool always-on sẽ tốn CU liên tục.
+</details>
+
+<details><summary><b>9.</b> Domain admin khác Fabric admin thế nào?</summary>
+
+Fabric admin quản trị toàn tenant và tạo domain; domain admin chỉ quản trị trong domain của mình (gán workspace, đặt default label, nhận uỷ quyền một số setting).
+</details>
+
+<details><summary><b>10.</b> Muốn mọi notebook trong workspace dùng chung Spark properties — làm gì?</summary>
+
+Tạo **Environment** với các Spark properties và libraries, rồi đặt làm **workspace default environment**.
+</details>
+
+<details><summary><b>11.</b> Workspace chưa gán capacity thì sao?</summary>
+
+Item không chạy được workload Fabric (Spark, pipeline, warehouse…). Capacity là nguồn CU; phải gán workspace vào một capacity (F SKU hoặc trial).
+</details>
+
+<details><summary><b>12.</b> ReadData và ReadAll khác nhau ra sao?</summary>
+
+ReadData = đọc qua SQL analytics endpoint. ReadAll = đọc trực tiếp file/bảng qua OneLake API/Spark/Lakehouse explorer.
+</details>
+
+## H. MINI-LAB 45 PHÚT (làm trong tenant thật, không đọc lại tài liệu)
+
+1. Tạo workspace `dp700-lab-d1`, gán vào capacity trial.
+2. Mời một tài khoản test làm **Viewer**. Đăng nhập bằng tài khoản đó và thử: mở lakehouse, chạy notebook, xem report. Ghi lại chính xác cái gì làm được, cái gì bị chặn.
+3. Đổi tài khoản test lên **Contributor**, thử lại đúng ba việc trên. Viết ra 3 khác biệt.
+4. Tạo một **Environment** có `spark.sql.shuffle.partitions=200` và thư viện `pandas`; đặt làm default environment của workspace; chạy một notebook và in ra `spark.conf.get("spark.sql.shuffle.partitions")` để xác nhận.
+5. Vào **Workspace settings > OneLake**, xem các tuỳ chọn lifecycle/tier có gì; viết ra một policy giả định 3 rule cho dữ liệu bronze/silver/gold.
+6. Vào Admin portal, tìm một tenant setting liên quan OneLake; viết ra một câu phân biệt nó với setting workspace vừa xem.
+
+**Ngưỡng đạt:** viết lại được ma trận role ở mục B trên giấy trắng **không nhìn tài liệu**, và trả lời đúng ≥11/12 câu ở mục G.

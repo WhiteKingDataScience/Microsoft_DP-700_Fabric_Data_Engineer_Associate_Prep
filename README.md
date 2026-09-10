@@ -18,16 +18,16 @@ Tuy nhiên, câu trả lời trung thực cho câu hỏi “đã đủ để tr�
 
 | Domain | Functional group | Số objective | Tài liệu chính | Coverage |
 |---|---|---:|---|:---:|
-| Implement and manage | Configure workspace settings | 4 | [Workspace Settings](DP700_Domain1_Implement_Manage_01_Workspace_Settings.md) | 4/4 |
-| Implement and manage | Implement lifecycle management | 3 | [Lifecycle Management](DP700_Domain1_Implement_Manage_02_Lifecycle_Management.md) | 3/3 |
-| Implement and manage | Configure security and governance | 8 | [Security and Governance](DP700_Domain1_Implement_Manage_03_Security_and_Governance.md) | 8/8 |
-| Implement and manage | Orchestrate processes | 3 | [Orchestrate Processes](DP700_Domain1_Implement_Manage_04_Orchestrate_Processes.md) | 3/3 |
-| Ingest and transform | Design and implement loading patterns | 3 | [Loading Patterns](DP700_Domain2_Ingest_Transform_01_Design_Loading_Patterns.md) | 3/3 |
-| Ingest and transform | Ingest and transform batch data | 9 | [Batch Data](DP700_Domain2_Ingest_Transform_02_Batch_Data.md) | 9/9 |
-| Ingest and transform | Ingest and transform streaming data | 7 | [Streaming Data](DP700_Domain2_Ingest_Transform_03_Streaming_Data.md) | 7/7 |
-| Monitor and optimize | Monitor Fabric items | 4 | [Monitor Items and Alerts](DP700_Domain3_Monitor_Optimize_01_Monitor_Items_Alerts.md) | 4/4 |
-| Monitor and optimize | Identify and resolve errors | 7 | [Identify and Resolve Errors](DP700_Domain3_Monitor_Optimize_02_Identify_Resolve_Errors.md) | 7/7 |
-| Monitor and optimize | Optimize performance | 6 | [Optimize Performance](DP700_Domain3_Monitor_Optimize_03_Optimize_Performance.md) | 6/6 |
+| Implement and manage | Configure workspace settings | 4 | [Workspace Settings](Document_Guide/DP700_Domain1_Implement_Manage_01_Workspace_Settings.md) | 4/4 |
+| Implement and manage | Implement lifecycle management | 3 | [Lifecycle Management](Document_Guide/DP700_Domain1_Implement_Manage_02_Lifecycle_Management.md) | 3/3 |
+| Implement and manage | Configure security and governance | 8 | [Security and Governance](Document_Guide/DP700_Domain1_Implement_Manage_03_Security_and_Governance.md) | 8/8 |
+| Implement and manage | Orchestrate processes | 3 | [Orchestrate Processes](Document_Guide/DP700_Domain1_Implement_Manage_04_Orchestrate_Processes.md) | 3/3 |
+| Ingest and transform | Design and implement loading patterns | 3 | [Loading Patterns](Document_Guide/DP700_Domain2_Ingest_Transform_01_Design_Loading_Patterns.md) | 3/3 |
+| Ingest and transform | Ingest and transform batch data | 9 | [Batch Data](Document_Guide/DP700_Domain2_Ingest_Transform_02_Batch_Data.md) | 9/9 |
+| Ingest and transform | Ingest and transform streaming data | 7 | [Streaming Data](Document_Guide/DP700_Domain2_Ingest_Transform_03_Streaming_Data.md) | 7/7 |
+| Monitor and optimize | Monitor Fabric items | 4 | [Monitor Items and Alerts](Document_Guide/DP700_Domain3_Monitor_Optimize_01_Monitor_Items_Alerts.md) | 4/4 |
+| Monitor and optimize | Identify and resolve errors | 7 | [Identify and Resolve Errors](Document_Guide/DP700_Domain3_Monitor_Optimize_02_Identify_Resolve_Errors.md) | 7/7 |
+| Monitor and optimize | Optimize performance | 6 | [Optimize Performance](Document_Guide/DP700_Domain3_Monitor_Optimize_03_Optimize_Performance.md) | 6/6 |
 | **Tổng** | **10 functional groups** | **54** | **10 file chuyên đề** | **54/54** |
 
 > **Coverage 54/54 không có nghĩa xác suất đậu 100%.** Coverage đo sự hiện diện của kiến thức; readiness đo khả năng áp dụng dưới dạng case study, multiple choice, build list, drag-and-drop và câu hỏi có nhiều đáp án gần đúng.
@@ -40,19 +40,28 @@ Tuy nhiên, câu trả lời trung thực cho câu hỏi “đã đủ để tr�
 - Tính đến ngày đối chiếu, kỳ thi không liệt kê tiếng Việt. Microsoft nêu rằng nếu kỳ thi không có ngôn ngữ ưu tiên, thí sinh có thể yêu cầu thêm 30 phút; hãy xác minh lúc đăng ký.
 - Nguồn chính: [Certification page](https://learn.microsoft.com/en-us/credentials/certifications/fabric-data-engineer-associate/), [Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700), [Course DP-700T00-A](https://learn.microsoft.com/en-us/training/courses/dp-700t00).
 
+## Bắt đầu ở đâu: file tổng chỉ huy
+
+> **Cập nhật 06/09/2026.** Bộ tài liệu có thêm một file đứng đầu: **[Trọng tâm ôn thi & phản xạ quyết định](Document_Guide/DP700_00_MASTER_Trong_Tam_On_Thi.md)**.
+
+File đó là nơi đọc mỗi ngày, gồm: bản đồ Fabric trong một trang, **8 cụm nhầm lẫn giết điểm**, bảng phản xạ từ khoá → đáp án, quy trình 5 bước giải câu hỏi scenario, **72 câu active recall** có che đáp án, bảng đính chính các nhầm lẫn phổ biến, và lịch 6 tuần chạm cả ba domain mỗi tuần.
+
+Ngoài ra, **cả 10 file chuyên đề đều được bổ sung một chương cuối tên “HỌC LẠI TỪ GỐC”** gồm: bản chất trong 60 giây (kèm sơ đồ/ví von), cây quyết định, bảng phản xạ, bộ câu hỏi active recall, và mini-lab. Nếu chương chính thấy quá dày, hãy bắt đầu từ chương đó rồi mới đọc ngược lên.
+
 ## Cách học cho người mới bắt đầu
 
 ### Vòng 1 — Xây mental model
 
 Đọc theo thứ tự sau và chưa cần học thuộc cú pháp:
 
-1. [Workspace Settings](DP700_Domain1_Implement_Manage_01_Workspace_Settings.md)
-2. [Loading Patterns](DP700_Domain2_Ingest_Transform_01_Design_Loading_Patterns.md)
-3. [Batch Data](DP700_Domain2_Ingest_Transform_02_Batch_Data.md)
-4. [Streaming Data](DP700_Domain2_Ingest_Transform_03_Streaming_Data.md)
-5. [Security and Governance](DP700_Domain1_Implement_Manage_03_Security_and_Governance.md)
-6. [Lifecycle Management](DP700_Domain1_Implement_Manage_02_Lifecycle_Management.md)
-7. [Orchestrate Processes](DP700_Domain1_Implement_Manage_04_Orchestrate_Processes.md)
+0. [**Trọng tâm ôn thi & phản xạ quyết định**](Document_Guide/DP700_00_MASTER_Trong_Tam_On_Thi.md) — đọc mục 2 (bản đồ Fabric) và mục 3 (8 cụm nhầm lẫn) trước tiên
+1. [Workspace Settings](Document_Guide/DP700_Domain1_Implement_Manage_01_Workspace_Settings.md)
+2. [Loading Patterns](Document_Guide/DP700_Domain2_Ingest_Transform_01_Design_Loading_Patterns.md)
+3. [Batch Data](Document_Guide/DP700_Domain2_Ingest_Transform_02_Batch_Data.md)
+4. [Streaming Data](Document_Guide/DP700_Domain2_Ingest_Transform_03_Streaming_Data.md)
+5. [Security and Governance](Document_Guide/DP700_Domain1_Implement_Manage_03_Security_and_Governance.md)
+6. [Lifecycle Management](Document_Guide/DP700_Domain1_Implement_Manage_02_Lifecycle_Management.md)
+7. [Orchestrate Processes](Document_Guide/DP700_Domain1_Implement_Manage_04_Orchestrate_Processes.md)
 8. Ba file Monitor → Troubleshoot → Optimize.
 
 Sau vòng này, bạn phải giải thích được luồng tổng quát:

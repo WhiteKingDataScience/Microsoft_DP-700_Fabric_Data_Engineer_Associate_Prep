@@ -815,3 +815,206 @@ D. Monitoring Hub
 **B.** Deployment pipeline xử lý promotion giữa các stage. Với pipeline/configuration hiện đại, **Variable library** là lựa chọn chính để giữ value sets theo Dev/Test/Prod; deployment rules chỉ dùng khi đúng item/rule combination được support. Git quản lý version history/branches, không phải environment promotion.
 
 </details>
+
+---
+
+# 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
+
+> **Vì sao có chương này:** *Implement lifecycle management* là nơi ba công cụ có vai trò **chồng lấn trong đầu người học** — Git integration, deployment pipeline và variable library. Rất nhiều câu hỏi chỉ đơn giản kiểm tra xem bạn có phân biệt được "cái nào làm việc gì" hay không. Chương này viết lại theo hướng **dễ hiểu + phản xạ + tự kiểm tra**.
+> Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
+
+## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
+
+Hãy hình dung một xưởng thiết kế:
+
+```text
+  GIT INTEGRATION            DEPLOYMENT PIPELINE          VARIABLE LIBRARY
+  ───────────────            ───────────────────          ────────────────
+  Tủ hồ sơ lưu MỌI           Băng chuyền đưa bản vẽ       Bảng ghi "ở nhà máy nào
+  phiên bản bản vẽ           đã duyệt sang xưởng kế        thì dùng thông số nào"
+                                                          
+  "Ai sửa gì, khi nào,       "Dev → Test → Prod"          "Test dùng DB test,
+   quay lại bản cũ"                                         Prod dùng DB prod"
+
+        │                             │                            │
+        └──── CI (tích hợp) ──────────┴──── CD (triển khai) ────────┘
+```
+
+Ba câu chốt gói trọn objective này:
+
+1. **Git = lịch sử.** Nó trả lời "bản này khác bản trước chỗ nào, ai đổi, quay lui được không".
+2. **Deployment pipeline = di chuyển.** Nó trả lời "làm sao đưa thứ đã kiểm thử sang môi trường tiếp theo".
+3. **Variable library = khác biệt môi trường.** Nó trả lời "cùng một pipeline nhưng mỗi môi trường trỏ vào đâu".
+
+> 📌 **Nguyên tắc bất biến, hỏi kiểu nào cũng đúng:** Git và deployment pipeline chỉ làm việc với **định nghĩa item (metadata)**. Chúng **không bao giờ ghi đè dữ liệu** trong bảng hay file. Deploy một lakehouse sang Prod nghĩa là tạo cấu trúc lakehouse ở Prod, **không** mang dữ liệu theo.
+
+## B. GIT INTEGRATION — NĂM ĐIỀU PHẢI THUỘC
+
+| Câu hỏi | Trả lời |
+|---|---|
+| Provider nào được hỗ trợ? | **Azure DevOps Repos** và **GitHub** |
+| Đồng bộ ở cấp nào? | Cấp **workspace** — một workspace nối tới một branch của một repo |
+| Đồng bộ cái gì? | **Definition/metadata** của item (notebook, pipeline, lakehouse metadata, warehouse schema, eventstream, KQL DB, semantic model, report, variable library…) |
+| Không đồng bộ cái gì? | **Dữ liệu** trong bảng/file; workspace roles; một số item chưa được hỗ trợ (danh sách thay đổi theo thời gian — kiểm tra live) |
+| Xử lý xung đột thế nào? | Fabric hiển thị conflict và bắt chọn giữ bản **workspace (local)** hay bản **Git (remote)** cho từng item |
+
+**Chiều đồng bộ — nhớ đúng tên:**
+
+```text
+  Workspace  ──── Commit ────►  Git branch      (đẩy thay đổi bạn làm trong Fabric lên repo)
+  Workspace  ◄─── Update ─────  Git branch      (kéo thay đổi từ repo về workspace)
+```
+
+**Branching strategy hay được hỏi:**
+
+```text
+main branch  ←─ PR ←─ feature branch
+   │                     │
+   │                     └── "Branch out to new workspace": Fabric tạo workspace mới
+   │                          nối vào feature branch để bạn làm việc độc lập
+   └── workspace Dev chính
+```
+
+> 📌 Đề hỏi "nhiều dev cùng làm mà không đạp lên nhau" → mỗi dev một **feature branch + workspace riêng**, gộp về main bằng **pull request**.
+
+## C. DEPLOYMENT PIPELINE — SÁU ĐIỀU PHẢI THUỘC
+
+| Câu hỏi | Trả lời |
+|---|---|
+| Bao nhiêu stage? | **2 đến 10** stage; điển hình Dev → Test → Prod |
+| Mỗi stage là gì? | Một **workspace** được gán vào stage đó |
+| Deploy được gì? | **Định nghĩa item** được hỗ trợ |
+| KHÔNG deploy được gì? | **Dữ liệu thật**, workspace roles, connections; một số loại item có giới hạn riêng |
+| Deploy ngược được không? | Có — **backward deployment** (ví dụ Prod → Test) được hỗ trợ, hữu ích khi cần đồng bộ lại môi trường thấp hơn |
+| Quyền cần gì? | Cần quyền phù hợp trên **cả workspace nguồn lẫn workspace đích**; không nhất thiết phải là Admin của mọi stage — kiểm tra ma trận quyền hiện hành |
+
+**Auto-binding — khái niệm hay ra đề nhất của mục này:**
+
+```text
+Stage DEV                         Stage TEST
+┌────────────────┐  deploy   ┌────────────────┐
+│ Notebook_A ────┼──────────►│ Notebook_A ────┐│
+│      ↓         │           │                ││
+│ Lakehouse_LH   │           │ Lakehouse_LH ◄─┘│   ← Fabric TỰ trỏ lại vào Lakehouse của TEST
+└────────────────┘           └────────────────┘      (vì cả hai cùng nằm trong deployment pipeline)
+```
+
+Nếu item tham chiếu tới thứ **nằm ngoài** deployment pipeline (ví dụ một lakehouse ở workspace khác không thuộc pipeline), auto-binding **không** áp dụng — lúc đó phải dùng **variable library** hoặc deployment rule để trỏ lại.
+
+## D. VARIABLE LIBRARY vs DEPLOYMENT RULE — CHỌN CÁI NÀO
+
+| | Variable library | Deployment rule |
+|---|---|---|
+| Bản chất | Một **item Fabric** chứa biến + nhiều **value set** | Một quy tắc gắn vào **stage** của deployment pipeline |
+| Được version bởi Git? | **Có** (variables, valueSets, settings ở dạng JSON) | Không |
+| Phạm vi dùng | Pipeline, notebook, shortcut… tham chiếu biến trực tiếp | Chỉ áp lúc deploy, cho các item/rule được hỗ trợ |
+| Khi deploy | Mỗi stage chọn **active value set** riêng; active value set **không bị ghi đè** | Rule của stage đích ghi đè giá trị sau khi deploy |
+| Khuyến nghị 2026 | **Ưu tiên** — cách chiến lược cho cấu hình theo môi trường | Dùng khi item/rule đó chưa hỗ trợ variable library |
+
+Cách nhớ: **Variable library là "cấu hình như code"; deployment rule là "vá lúc giao hàng"**. Đề nói "quản lý cấu hình theo môi trường một cách nhất quán, có version" → variable library.
+
+## E. DATABASE PROJECT — KHI NÀO CẦN
+
+Database project (SQL project) là cách quản lý **schema của warehouse / SQL database dưới dạng code**:
+
+```text
+VS Code / Visual Studio (SQL Database Projects extension)
+        │  định nghĩa bảng, view, procedure bằng file .sql
+        ▼
+   dotnet build  →  MyProject.dacpac
+        │
+        ▼
+   publish tới Fabric Warehouse / SQL database   (thủ công hoặc trong CI/CD pipeline)
+```
+
+Chọn database project khi đề nói: "schema phải qua code review", "so sánh schema giữa các môi trường", "triển khai schema tự động trong Azure DevOps/GitHub Actions".
+
+> 📌 Đừng nhầm: database project quản lý **schema SQL**, không quản lý notebook/pipeline/lakehouse. Những thứ đó dùng Git integration.
+
+## F. BỘ QUYẾT ĐỊNH — ĐỌC ĐỀ LÀ CHỌN ĐƯỢC NGAY
+
+| Đề nói… | Chọn |
+|---|---|
+| "track changes, revert, code review, multiple developers" | **Git integration** |
+| "branch riêng cho từng tính năng mà không ảnh hưởng người khác" | **Branch out to new workspace** |
+| "đưa nội dung đã kiểm thử từ Test sang Prod" | **Deployment pipeline** |
+| "Prod đang đúng, cần đồng bộ ngược về Test" | **Backward deployment** |
+| "mỗi môi trường trỏ vào connection/DB khác nhau" | **Variable library** (hoặc deployment rule nếu được hỗ trợ) |
+| "notebook ở Test vẫn trỏ vào lakehouse của Dev sau khi deploy" | Kiểm tra **auto-binding** — item tham chiếu có nằm trong cùng deployment pipeline không |
+| "quản lý schema warehouse bằng mã nguồn, build ra artifact" | **Database project (.dacpac)** |
+| "tự động hoá toàn bộ CI/CD bằng code Python" | Thư viện **fabric-cicd** + Fabric REST API |
+| "dữ liệu trong bảng Prod bị mất sau khi deploy" | **Không thể** — deploy không đụng vào dữ liệu; nguyên nhân nằm ở chỗ khác |
+
+## G. ACTIVE RECALL — 12 CÂU (che đáp án, nói thành tiếng)
+
+<details><summary><b>1.</b> Git integration đồng bộ dữ liệu trong bảng không?</summary>
+
+**Không.** Chỉ đồng bộ definition/metadata. Git và deployment không bao giờ ghi đè dữ liệu trong tables/files.
+</details>
+
+<details><summary><b>2.</b> Hai provider Git được hỗ trợ?</summary>
+
+**Azure DevOps Repos** và **GitHub**.
+</details>
+
+<details><summary><b>3.</b> Hai thao tác đồng bộ hai chiều tên là gì?</summary>
+
+**Commit** (workspace → Git) và **Update** (Git → workspace).
+</details>
+
+<details><summary><b>4.</b> Khi có conflict, Fabric xử lý thế nào?</summary>
+
+Hiển thị conflict và bắt bạn chọn giữ bản **workspace (local)** hay bản **Git (remote)** cho từng item.
+</details>
+
+<details><summary><b>5.</b> Deployment pipeline có tối đa bao nhiêu stage?</summary>
+
+**10** (tối thiểu 2). Mỗi stage gắn với một workspace.
+</details>
+
+<details><summary><b>6.</b> Auto-binding hoạt động khi nào và không hoạt động khi nào?</summary>
+
+Hoạt động khi item tham chiếu tới item khác **trong cùng deployment pipeline** → tự trỏ vào bản của stage đích. Không hoạt động khi tham chiếu ra ngoài pipeline → phải dùng variable library/deployment rule.
+</details>
+
+<details><summary><b>7.</b> Vì sao ưu tiên variable library hơn deployment rule?</summary>
+
+Variable library được **version trong Git**, dùng được ở nhiều loại item, mỗi stage có **active value set** riêng và active value set không bị ghi đè khi deploy. Deployment rule chỉ áp cho một số item/rule được hỗ trợ và không có version history.
+</details>
+
+<details><summary><b>8.</b> Deploy một lakehouse từ Dev sang Prod thì dữ liệu có sang theo không?</summary>
+
+**Không.** Chỉ cấu trúc/metadata sang; Prod sẽ có lakehouse rỗng cho tới khi bạn nạp dữ liệu bằng pipeline/job của Prod.
+</details>
+
+<details><summary><b>9.</b> Backward deployment là gì?</summary>
+
+Deploy ngược từ stage cao về stage thấp (ví dụ Prod → Test) để đồng bộ lại môi trường thấp hơn khi nó bị lệch.
+</details>
+
+<details><summary><b>10.</b> Database project sinh ra artifact gì và deploy thế nào?</summary>
+
+Build ra **`.dacpac`**; publish tới Fabric Warehouse/SQL database, thủ công hoặc qua CI/CD (Azure DevOps, GitHub Actions).
+</details>
+
+<details><summary><b>11.</b> Muốn nhiều dev làm song song mà không đụng nhau — cách chuẩn?</summary>
+
+Mỗi dev **branch out to a new workspace** từ feature branch riêng, làm xong tạo **pull request** về main; workspace Dev chính nối với main.
+</details>
+
+<details><summary><b>12.</b> Git có promote nội dung từ Dev sang Prod được không?</summary>
+
+Không phải nhiệm vụ của Git. Git là **CI (version/tích hợp)**; promote giữa môi trường là **CD**, do **deployment pipeline** (hoặc fabric-cicd/REST API) đảm nhiệm.
+</details>
+
+## H. MINI-LAB 60 PHÚT (làm trong tenant thật)
+
+1. Tạo repo Azure DevOps hoặc GitHub trống. Nối workspace `dp700-lab-dev` vào branch `main`.
+2. Tạo một notebook và một pipeline đơn giản trong workspace → **Commit** lên Git. Mở repo, quan sát cấu trúc thư mục và file `.platform` của từng item.
+3. Sửa trực tiếp một file trong repo (đổi mô tả), rồi **Update** về workspace. Xác nhận thay đổi xuất hiện.
+4. **Tạo conflict có chủ đích:** sửa cùng một item ở cả workspace lẫn repo, rồi commit → quan sát màn hình giải quyết xung đột và chọn từng bên.
+5. Tạo **deployment pipeline** 3 stage (Dev/Test/Prod), gán 3 workspace. Deploy Dev → Test. Kiểm tra: notebook ở Test đang trỏ vào lakehouse nào (auto-binding)?
+6. Tạo một **variable library** với biến `lakehouse_name` và hai value set (Test/Prod). Tham chiếu biến trong pipeline. Deploy và xác nhận mỗi stage nhận đúng giá trị.
+7. Xoá một bảng dữ liệu ở Test, deploy lại từ Dev → xác nhận **dữ liệu không quay lại** (chứng minh deploy không mang dữ liệu).
+
+**Ngưỡng đạt:** vẽ lại được sơ đồ mục A trên giấy trắng, và trả lời đúng ≥11/12 câu ở mục G.

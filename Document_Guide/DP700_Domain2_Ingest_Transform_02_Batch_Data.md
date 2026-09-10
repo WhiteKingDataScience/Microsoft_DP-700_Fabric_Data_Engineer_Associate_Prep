@@ -1281,3 +1281,180 @@ Managed operational DB replication→ Mirroring
 - [Copy activity](https://learn.microsoft.com/en-us/fabric/data-factory/copy-data-activity)
 
 ---
+
+---
+
+# 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
+
+> **Vì sao có chương này:** *Ingest and transform batch data* có **9 objective — nhóm lớn thứ nhì blueprint**. Phần lớn câu hỏi ở đây là câu hỏi **chọn công cụ và chọn nơi lưu**, chứ không phải câu hỏi cú pháp. Chương này viết lại các quyết định đó thành cây quyết định và bảng phản xạ.
+> Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
+
+## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
+
+Mọi câu hỏi batch đều là tổ hợp của **ba lựa chọn**:
+
+```text
+1. ĐƯA DỮ LIỆU VÀO BẰNG GÌ?
+   Shortcut (không copy) · Mirroring (replicate DB) · Copy Job (di chuyển có sẵn CDC/SCD)
+   · Pipeline Copy (trong luồng điều phối) · Dataflow Gen2 (low-code) · Notebook (code)
+
+2. LƯU Ở ĐÂU?
+   Lakehouse (Delta/Spark) · Warehouse (T-SQL) · Eventhouse (time-series/KQL)
+
+3. BIẾN ĐỔI BẰNG GÌ?
+   PySpark (mạnh nhất) · T-SQL (Warehouse) · KQL (Eventhouse) · Power Query (Dataflow Gen2)
+```
+
+## B. CHỌN NƠI LƯU — CÂY QUYẾT ĐỊNH
+
+```text
+Dữ liệu là luồng sự kiện theo thời gian (log, telemetry, IoT)?
+├── CÓ  ──────────────────────────────────────────► EVENTHOUSE (KQL)
+└── KHÔNG
+     │
+     Có cần T-SQL đầy đủ CÓ GHI (INSERT/UPDATE/DELETE, transaction nhiều bảng)?
+     ├── CÓ  ───────────────────────────────────────► WAREHOUSE
+     └── KHÔNG
+          │
+          Dữ liệu semi/unstructured, dùng Spark, medallion, ML?
+          └── CÓ  ──────────────────────────────────► LAKEHOUSE
+```
+
+> 📌 Điểm bị hỏi nhiều nhất: **SQL analytics endpoint của Lakehouse chỉ ĐỌC.** Cần ghi bằng T-SQL thì phải là **Warehouse**.
+
+## C. CHỌN CÁCH ĐƯA DỮ LIỆU VÀO — BẢNG PHẢN XẠ
+
+| Yêu cầu trong đề | Chọn | Vì sao các lựa chọn kia sai |
+|---|---|---|
+| "Không được sao chép, dữ liệu ở S3/ADLS/GCS" | **Shortcut** | Copy/Dataflow đều tạo bản sao |
+| "Replicate Azure SQL DB gần realtime, ít ETL nhất" | **Mirroring** | Shortcut không trỏ được tới DB quan hệ; pipeline 5 phút tốn vận hành |
+| "Ingest có sẵn incremental/CDC/SCD2, ít công xây dựng" | **Copy Job** | Pipeline phải tự dựng logic; Dataflow không phải công cụ replicate |
+| "Nhiều bước, rẽ nhánh, ForEach, alert" | **Pipeline** | Copy Job không điều phối |
+| "Citizen dev, Power Query, nhiều nguồn nhỏ" | **Dataflow Gen2** | Notebook đòi kỹ năng code |
+| "JSON lồng nhau, logic phức tạp, ML" | **Notebook (Spark)** | Dataflow/Copy không đủ mạnh |
+
+**Shortcut vs Mirroring — ranh giới phải thuộc:**
+
+| | Shortcut | Mirroring |
+|---|---|---|
+| Nguồn | **Storage**: OneLake khác, ADLS Gen2, S3, GCS, S3-compatible, Dataverse | **Database**: Azure SQL DB/MI, Snowflake, Cosmos DB, PostgreSQL… |
+| Có copy dữ liệu? | **Không** (chỉ trỏ) | **Có** (bản sao trong OneLake, cập nhật liên tục) |
+| Thấy thay đổi nguồn | Ngay lập tức | Gần thời gian thực |
+| Có CDC? | Không | Có (đó là cơ chế của nó) |
+
+## D. CHỌN ENGINE BIẾN ĐỔI
+
+| Đề nói | Chọn | Ghi chú |
+|---|---|---|
+| "no-code, người dùng nghiệp vụ" | **Dataflow Gen2** | Chú ý query folding — gãy folding thì chậm và dễ timeout |
+| "dữ liệu lớn, JSON lồng, UDF, ML, MERGE" | **PySpark notebook** | Mạnh nhất, tốn kỹ năng nhất |
+| "star schema, stored procedure, transaction" | **T-SQL trong Warehouse** | Dùng CTAS/`COPY INTO` để load, tránh INSERT từng dòng |
+| "log/telemetry, tổng hợp theo thời gian" | **KQL trong Eventhouse** | `summarize ... by bin(Time, 5m)` |
+
+## E. BỐN VẤN ĐỀ CHẤT LƯỢNG DỮ LIỆU PHẢI BIẾT XỬ LÝ
+
+| Vấn đề | Cách xử lý chuẩn |
+|---|---|
+| **Duplicate** | `row_number()` theo business key, giữ bản mới nhất; hoặc `dropDuplicates()` |
+| **Missing values** | `fillna()`/`COALESCE`, hoặc gán unknown member; quyết định theo nghiệp vụ, không xoá bừa |
+| **Late-arriving data** | Fact tới trước dimension → surrogate key **unknown (-1)**, cập nhật lại sau |
+| **Schema drift** | Khai báo schema rõ ràng khi đọc; xử lý cột mới có kiểm soát thay vì để tự suy luận |
+
+```python
+# Dedup theo business key, giữ bản mới nhất
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+w = Window.partitionBy("CustomerId").orderBy(F.col("ModifiedDate").desc())
+clean = (df.withColumn("rn", F.row_number().over(w))
+           .filter("rn = 1").drop("rn"))
+```
+
+## F. DENORMALIZE VÀ AGGREGATE — VÌ SAO VÀ THẾ NÀO
+
+```text
+Chuẩn hoá (OLTP)                      Phi chuẩn hoá (phân tích)
+products ─► subcategories ─► categories   ──►   dim_product (một bảng phẳng)
+   3 bảng, nhiều join                            1 bảng, ít join, hợp star schema
+```
+
+Phi chuẩn hoá đổi **dung lượng lấy tốc độ đọc** — đúng hướng cho kho phân tích và Power BI. Các phép gom nhóm hay dùng:
+
+```python
+df.groupBy("Region", "Category").agg(F.sum("Revenue").alias("TotalRevenue"))
+df.rollup("Region", "City").agg(F.sum("Revenue"))   # có subtotal theo cấp
+df.cube("Region", "Category").agg(F.sum("Revenue")) # mọi tổ hợp subtotal
+```
+
+## G. ACTIVE RECALL — 12 CÂU (che đáp án, nói thành tiếng)
+
+<details><summary><b>1.</b> SQL analytics endpoint của Lakehouse đọc hay ghi được?</summary>
+
+**Chỉ đọc.** Cần ghi bằng T-SQL thì phải dùng **Warehouse**.
+</details>
+
+<details><summary><b>2.</b> Shortcut trỏ được tới những nguồn nào?</summary>
+
+**Storage**: OneLake khác, ADLS Gen2, Amazon S3, Google Cloud Storage, S3-compatible, Dataverse. **Không** trỏ tới database quan hệ.
+</details>
+
+<details><summary><b>3.</b> Mirroring khác shortcut ở điểm cốt lõi nào?</summary>
+
+Mirroring **tạo bản sao** trong OneLake và cập nhật liên tục từ **database** nguồn. Shortcut **không copy**, chỉ trỏ tới **storage**.
+</details>
+
+<details><summary><b>4.</b> Khi nào chọn Copy Job thay vì pipeline?</summary>
+
+Khi chỉ cần **di chuyển dữ liệu** với full/incremental/CDC/SCD2 sẵn có và **ít công xây dựng**. Cần điều phối nhiều bước thì mới dùng pipeline.
+</details>
+
+<details><summary><b>5.</b> Đặt shortcut trong `Tables` và trong `Files` khác nhau ra sao?</summary>
+
+`Tables` dành cho dữ liệu dạng bảng Delta (được nhận diện là bảng, truy vấn được qua SQL endpoint); `Files` dành cho file thô ở mọi định dạng.
+</details>
+
+<details><summary><b>6.</b> Query folding là gì và vì sao quan trọng với Dataflow Gen2?</summary>
+
+Là việc Power Query đẩy phép biến đổi xuống **nguồn** thực thi. Gãy folding → kéo hết dữ liệu về rồi mới xử lý → chậm, dễ timeout. Kiểm tra bằng **View Native Query**.
+</details>
+
+<details><summary><b>7.</b> Cách load lớn vào Warehouse hiệu quả nhất?</summary>
+
+**CTAS** hoặc **`COPY INTO`**; tránh `INSERT` từng dòng (singleton insert) vì rất tốn tài nguyên.
+</details>
+
+<details><summary><b>8.</b> Dedup giữ bản mới nhất — viết ý tưởng code.</summary>
+
+`row_number()` với `Window.partitionBy(business_key).orderBy(modified_date desc)`, giữ `rn = 1`.
+</details>
+
+<details><summary><b>9.</b> Late-arriving data xử lý thế nào để không làm fail pipeline?</summary>
+
+Gán **unknown member** (surrogate key `-1`) cho fact chưa tìm thấy dimension, ghi log, cập nhật lại khi dimension xuất hiện.
+</details>
+
+<details><summary><b>10.</b> `rollup` khác `cube` thế nào?</summary>
+
+`rollup` tạo subtotal **theo thứ bậc** các cột đã cho; `cube` tạo subtotal cho **mọi tổ hợp** của các cột đó.
+</details>
+
+<details><summary><b>11.</b> Vì sao phi chuẩn hoá lại đúng hướng cho kho phân tích?</summary>
+
+Đổi dung lượng lấy tốc độ đọc: ít join hơn khi truy vấn, phù hợp star schema và mô hình Power BI.
+</details>
+
+<details><summary><b>12.</b> Chọn Eventhouse thay vì Lakehouse khi nào?</summary>
+
+Khi dữ liệu là **luồng sự kiện theo thời gian** (log, telemetry, IoT) cần truy vấn nhanh theo dải thời gian — với hot cache và KQL.
+</details>
+
+## H. MINI-LAB 60 PHÚT
+
+1. Tạo **shortcut** từ lakehouse tới một container ADLS Gen2 (hoặc lakehouse khác); đặt một shortcut vào `Tables` và một vào `Files`, so sánh cách chúng hiển thị và truy vấn.
+2. Nếu có Azure SQL Database: cấu hình **Mirroring** và quan sát dữ liệu tự xuất hiện trong OneLake; viết 5 dòng phân biệt nó với shortcut từ trí nhớ.
+3. Tạo **Copy Job** với chế độ incremental; chạy 2 lần và xác nhận lần 2 chỉ chép phần mới.
+4. Tạo **Dataflow Gen2** đọc CSV, làm vài phép biến đổi; dùng **View Native Query** xem bước nào còn fold.
+5. Trong notebook, viết đoạn dedup bằng `row_number()`, xử lý null bằng `fillna`, và ghi ra bảng Delta ở Silver.
+6. Trong Warehouse, load một bảng bằng **CTAS**, rồi viết truy vấn `GROUP BY ... ROLLUP` và so sánh với `CUBE`.
+
+**Ngưỡng đạt:** đọc thuộc cây quyết định ở mục B, giải đúng bảng phản xạ mục C khi che cột "Chọn", và trả lời đúng ≥11/12 câu ở mục G.

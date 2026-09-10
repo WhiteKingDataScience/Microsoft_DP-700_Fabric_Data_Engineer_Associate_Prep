@@ -982,3 +982,304 @@ latest=df.withColumn('rn',F.row_number().over(w)).filter('rn=1').drop('rn')
 - [Structured Streaming overview](https://learn.microsoft.com/en-us/fabric/data-engineering/structured-streaming-overview)
 
 ---
+
+---
+
+# 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
+
+> **Vì sao có chương này:** *Design and implement loading patterns* là nhóm kỹ năng bị hỏi ở mức **chi tiết triển khai**, không phải mức khái niệm. Đề hiếm khi hỏi "watermark là gì"; đề đưa một ràng buộc rồi hỏi "logic nào đúng", "vì sao lần chạy lại sinh dòng trùng", "cột nào phải có". Chương này viết lại phần cốt lõi theo hướng **dễ hiểu + code gõ được từ trí nhớ + tự kiểm tra**.
+> Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
+
+## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
+
+Mọi bài toán loading pattern chỉ là câu trả lời cho **bốn câu hỏi**:
+
+```text
+1. LẤY GÌ?      Toàn bộ (full)  hay  chỉ phần mới/đổi (incremental)?
+                       │                        │
+                       │                        ├── Nguồn có cột thời gian/ID tăng dần? → WATERMARK
+                       │                        ├── Nguồn có CDC/change feed?           → CDC / CDF
+                       │                        └── Nguồn chỉ cho snapshot?             → so sánh snapshot
+
+2. GHI THẾ NÀO?  Overwrite  |  Append  |  Merge (upsert)  |  SCD Type 2
+
+3. CHẠY LẠI CÓ AN TOÀN KHÔNG?   ← câu hỏi bị bỏ quên nhiều nhất, và là chỗ đề hay gài bẫy
+                Dedup nguồn → match key duy nhất → điều kiện xác định → commit state SAU khi thành công
+
+4. DỮ LIỆU BỊ XOÁ Ở NGUỒN THÌ SAO?   Soft delete flag | CDC delete | so sánh snapshot
+```
+
+Nếu bạn trả lời được bốn câu này cho một scenario bất kỳ, bạn đã giải xong câu hỏi.
+
+**Ví von:** full load là **chép lại cả cuốn sổ mỗi ngày**; incremental là **chỉ chép những dòng mới viết thêm**. Watermark là **cái kẹp sách đánh dấu đã chép tới đâu** — và cái kẹp chỉ được dời **sau khi** chép xong an toàn, chứ không phải trước.
+
+## B. FULL LOAD vs INCREMENTAL — CHỌN THẾ NÀO
+
+| Tiêu chí | Full load | Incremental load |
+|---|---|---|
+| Khối lượng dữ liệu | Nhỏ / vừa | Lớn |
+| Nguồn có cột thay đổi đáng tin? | Không cần | **Bắt buộc** (timestamp/ID) hoặc phải có CDC |
+| Xử lý delete ở nguồn | Tự nhiên đúng (nạp lại hết) | Phải xử lý riêng |
+| Chi phí CU | Cao và tăng theo thời gian | Thấp, ổn định |
+| Độ phức tạp vận hành | Thấp | Cao (state, retry, dedup) |
+| Rủi ro | Cửa sổ ghi dài, tốn tài nguyên | Sai watermark → **mất dữ liệu** hoặc **trùng dữ liệu** |
+
+> 📌 **Phản xạ:** đề nói "bảng dimension nhỏ, thay đổi ít, cần đơn giản" → full load/overwrite. Đề nói "bảng fact hàng trăm triệu dòng, chỉ có dữ liệu mới mỗi ngày" → incremental.
+
+## C. WATERMARK — VIẾT LẠI ĐƯỢC TỪ TRÍ NHỚ
+
+Đây là pattern phải gõ lại được không nhìn tài liệu.
+
+```text
+┌──────────────┐   1. Lookup: đọc watermark cũ
+│ control table│──────────────────────────────────┐
+│ (watermark)  │                                  ▼
+└──────▲───────┘                    2. Copy/Query: lấy rows có
+       │                               ModifiedDate > @old AND <= @new
+       │                                          │
+       │ 4. Update watermark = @new               ▼
+       │    (CHỈ khi bước 3 thành công)  3. MERGE vào bảng đích
+       └──────────────────────────────────────────┘
+```
+
+**Ba lỗi kinh điển của pattern này — đề hay hỏi đúng ba lỗi này:**
+
+1. **Cập nhật watermark trước khi load xong.** Nếu bước load fail, watermark đã dời → **mất dữ liệu vĩnh viễn**. Luôn commit watermark ở bước cuối, sau khi mọi thứ thành công.
+2. **Dùng `>=` cả hai đầu.** Gây trùng dòng biên. Chuẩn: `> old AND <= new`, với `new` chốt một lần ở đầu lần chạy (không dùng `utcnow()` lặp lại nhiều nơi).
+3. **Lấy `new` bằng thời gian hệ thống thay vì `MAX()` ở nguồn.** Lệch múi giờ/độ trễ ghi làm sót dòng. An toàn hơn: `new = MAX(ModifiedDate)` đọc từ nguồn.
+
+**Pipeline expression cần thuộc:**
+
+```text
+@activity('LookupWatermark').output.firstRow.WatermarkValue
+@concat('SELECT * FROM dbo.Orders WHERE ModifiedDate > ''',
+        activity('LookupWatermark').output.firstRow.WatermarkValue,
+        ''' AND ModifiedDate <= ''',
+        activity('LookupNewWatermark').output.firstRow.NewWatermark, '''')
+```
+
+## D. MERGE IDEMPOTENT — BỐN ĐIỀU KIỆN
+
+`MERGE` **không tự thân idempotent**. Muốn chạy lại an toàn phải đủ bốn điều kiện:
+
+```python
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+from delta.tables import DeltaTable
+
+# ĐIỀU KIỆN 1 — DEDUP NGUỒN theo business key, giữ bản mới nhất
+w = Window.partitionBy("CustomerId").orderBy(F.col("ModifiedDate").desc())
+src = (spark.read.format("delta").load(bronze_path)
+       .withColumn("rn", F.row_number().over(w))
+       .filter("rn = 1")
+       .drop("rn"))
+
+# ĐIỀU KIỆN 2 — MATCH KEY DUY NHẤT trên bảng đích
+# ĐIỀU KIỆN 3 — ĐIỀU KIỆN XÁC ĐỊNH (chỉ update khi thực sự mới hơn)
+tgt = DeltaTable.forName(spark, "silver.dim_customer")
+(tgt.alias("t")
+    .merge(src.alias("s"), "t.CustomerId = s.CustomerId")
+    .whenMatchedUpdateAll(condition="s.ModifiedDate > t.ModifiedDate")
+    .whenNotMatchedInsertAll()
+    .execute())
+
+# ĐIỀU KIỆN 4 — COMMIT WATERMARK/STATE SAU KHI THÀNH CÔNG (ở bước sau, không trong cùng cell)
+```
+
+> ⚠️ **Bẫy được hỏi rất nhiều:** nếu nguồn có **nhiều dòng cùng match một dòng đích**, Delta `MERGE` sẽ **báo lỗi** (`multiple source rows matched`). Đó chính là lý do bước dedup ở điều kiện 1 là **bắt buộc**, không phải tuỳ chọn.
+
+## E. SCD TYPE 1 vs TYPE 2 — SƠ ĐỒ VÀ CODE
+
+```text
+Nguồn: Customer C001 đổi City từ "Hanoi" sang "Danang"
+
+SCD TYPE 1 (ghi đè — chỉ giữ hiện tại)
+┌────────┬─────────┐          ┌────────┬─────────┐
+│ C001   │ Hanoi   │   ──►    │ C001   │ Danang  │      1 dòng, lịch sử biến mất
+└────────┴─────────┘          └────────┴─────────┘
+
+SCD TYPE 2 (giữ lịch sử)
+┌────────┬─────────┬────────────┬────────────┬───────────┐
+│ C001   │ Hanoi   │ 2026-01-01 │ 2026-09-06 │ IsCurrent=false │  ← expire dòng cũ
+│ C001   │ Danang  │ 2026-09-06 │ NULL       │ IsCurrent=true  │  ← insert dòng mới
+└────────┴─────────┴────────────┴────────────┴───────────┘
+                     ValidFrom    ValidTo
+```
+
+**SCD Type 2 luôn là hai bước** — đây là điểm phải nhớ:
+
+```python
+from pyspark.sql import functions as F
+from delta.tables import DeltaTable
+
+tgt = DeltaTable.forName(spark, "silver.dim_customer")
+now = F.current_timestamp()
+
+# BƯỚC 1 — Expire các dòng current có thuộc tính thay đổi
+(tgt.alias("t")
+    .merge(src.alias("s"), "t.CustomerId = s.CustomerId AND t.IsCurrent = true")
+    .whenMatchedUpdate(
+        condition="t.City <> s.City OR t.Segment <> s.Segment",
+        set={"IsCurrent": F.lit(False), "ValidTo": now})
+    .execute())
+
+# BƯỚC 2 — Insert version mới cho những key vừa bị expire + key hoàn toàn mới
+new_versions = (src.alias("s")
+    .join(tgt.toDF().alias("t"),
+          (F.col("s.CustomerId") == F.col("t.CustomerId")) & (F.col("t.IsCurrent") == True),
+          "left_anti")          # chỉ giữ những dòng chưa có bản current tương ứng
+    .withColumn("ValidFrom", F.current_timestamp())
+    .withColumn("ValidTo", F.lit(None).cast("timestamp"))
+    .withColumn("IsCurrent", F.lit(True)))
+
+new_versions.write.format("delta").mode("append").saveAsTable("silver.dim_customer")
+```
+
+**T-SQL trong Warehouse** cũng theo đúng hai bước: `UPDATE ... SET IsCurrent = 0, ValidTo = SYSDATETIME()` rồi `INSERT` bản mới.
+
+> 📌 Cột bắt buộc của SCD2: **ValidFrom / ValidTo / IsCurrent** (một số thiết kế thêm `IsDeleted`, `HashDiff` để phát hiện thay đổi nhanh).
+
+## F. LATE-ARRIVING DIMENSION — MẪU CHUẨN
+
+Tình huống: fact có `CustomerId = C999` nhưng `dim_customer` chưa có C999.
+
+```text
+SAI:  để join fail hoặc để fact bị loại → mất doanh thu trong báo cáo
+SAI:  dừng cả pipeline chờ dimension    → hệ thống mong manh
+
+ĐÚNG: gán surrogate key UNKNOWN (thường = -1) rồi ghi log
+      ┌──────────────────────────────────────────────┐
+      │ dim_customer luôn có sẵn dòng đặc biệt:      │
+      │   CustomerKey = -1, CustomerId = 'UNKNOWN'   │
+      └──────────────────────────────────────────────┘
+      Sau đó khi dimension thật xuất hiện, một job cập nhật lại fact
+      (hoặc dùng inferred member: tạo dòng dim tạm rồi hoàn thiện sau)
+```
+
+```python
+fact = (fact_raw.alias("f")
+        .join(dim.alias("d"), F.col("f.CustomerId") == F.col("d.CustomerId"), "left")
+        .withColumn("CustomerKey", F.coalesce(F.col("d.CustomerKey"), F.lit(-1))))
+```
+
+## G. XỬ LÝ DELETE Ở NGUỒN — BA CÁCH
+
+| Cách | Khi nào dùng | Ghi chú |
+|---|---|---|
+| **CDC / change feed** | Nguồn phát tín hiệu delete | Chuẩn nhất; Copy Job với CDC replicate được cả delete |
+| **Soft delete flag** | Nguồn có cột `IsDeleted`/`Status` | Chỉ cần lọc/đánh dấu ở đích |
+| **So sánh snapshot** | Nguồn chỉ cho snapshot đầy đủ | So key đích với key nguồn, đánh dấu key thiếu là đã xoá — tốn kém |
+
+> 📌 Câu hỏi hay gặp: "incremental load bằng watermark, vì sao bảng đích vẫn còn dòng đã xoá ở nguồn?" → vì **watermark chỉ thấy dòng được sửa/thêm**, nó **không thấy dòng bị xoá**. Muốn xử lý delete phải dùng CDC hoặc so sánh snapshot.
+
+## H. COPY JOB — CÁC LỰA CHỌN PHẢI THUỘC
+
+| Nhóm | Lựa chọn | Ghi chú thi |
+|---|---|---|
+| Chế độ | **Full copy** ↔ **Incremental copy** | Lần đầu chép hết, các lần sau chỉ chép phần mới/đổi |
+| Phát hiện thay đổi | **CDC** ↔ **Watermark-based** | Trộn bảng có CDC và không CDC trong một job → **tất cả** bị coi là watermark-based |
+| Cách ghi | **Append** (mặc định) · **Merge** (≈ SCD1) · **Overwrite** · **SCD Type 2** | SCD2 built-in chỉ khả dụng với CDC, tự thêm cột hiệu lực |
+
+> 📌 Copy Job là đáp án đúng khi đề nói "cần incremental/CDC/SCD2 nhưng **giảm thiểu công sức xây dựng**". Nếu đề đòi rẽ nhánh, ForEach, gọi notebook, alert → đó là **Pipeline**.
+
+## I. MEDALLION — MỖI LỚP LÀM GÌ, DÙNG PATTERN NÀO
+
+```text
+BRONZE  raw, giữ nguyên, có audit columns      →  APPEND (hoặc overwrite theo partition ngày)
+          _ingested_at, _source_file, _batch_id
+   ▼
+SILVER  làm sạch, ép kiểu, khử trùng, conform  →  MERGE idempotent (SCD1/SCD2)
+   ▼
+GOLD    star schema, aggregate, business logic →  MERGE hoặc rebuild theo lịch
+```
+
+Ba quy tắc thường bị hỏi:
+
+1. **Bronze không sửa dữ liệu** — chỉ thêm cột audit. Muốn tái xử lý thì luôn còn nguồn gốc.
+2. **Silver là nơi đặt business key và khử trùng**, không phải Gold.
+3. **Gold phục vụ báo cáo** — hợp với Direct Lake, nên là nơi cần V-Order + `OPTIMIZE`.
+
+## J. ACTIVE RECALL — 14 CÂU (che đáp án, nói thành tiếng)
+
+<details><summary><b>1.</b> Watermark phải được cập nhật ở thời điểm nào và vì sao?</summary>
+
+**Sau khi** toàn bộ bước load/MERGE thành công. Nếu cập nhật trước và load fail, lần chạy sau sẽ bỏ qua khoảng dữ liệu đó → **mất dữ liệu**.
+</details>
+
+<details><summary><b>2.</b> Vì sao khoảng lọc nên là `> old AND <= new` chứ không phải `>= old`?</summary>
+
+`>=` làm dòng ở biên bị lấy lại hai lần → trùng dữ liệu. `>` ở cận dưới và `<=` ở cận trên chốt một lần cho mỗi dòng.
+</details>
+
+<details><summary><b>3.</b> Bốn điều kiện để `MERGE` idempotent?</summary>
+
+(1) dedup source theo business key; (2) match key duy nhất ở đích; (3) điều kiện update xác định (ví dụ chỉ update khi mới hơn); (4) commit watermark/state sau khi thành công.
+</details>
+
+<details><summary><b>4.</b> Điều gì xảy ra khi nhiều source row match một target row trong Delta MERGE?</summary>
+
+`MERGE` **báo lỗi**. Phải dedup nguồn trước bằng `row_number()` theo business key.
+</details>
+
+<details><summary><b>5.</b> SCD Type 2 cần những cột nào và làm mấy bước?</summary>
+
+`ValidFrom`, `ValidTo`, `IsCurrent` (có thể thêm `HashDiff`, `IsDeleted`). Làm **hai bước**: expire dòng current đã đổi, rồi insert version mới.
+</details>
+
+<details><summary><b>6.</b> Late-arriving dimension xử lý ra sao và vì sao không để pipeline fail?</summary>
+
+Gán surrogate key **unknown member (-1)** và ghi log, sau đó cập nhật lại khi dimension xuất hiện. Để fail sẽ chặn cả luồng fact chỉ vì một key thiếu.
+</details>
+
+<details><summary><b>7.</b> Watermark có phát hiện được dòng bị xoá ở nguồn không?</summary>
+
+**Không.** Watermark chỉ thấy dòng mới/được sửa. Delete phải xử lý bằng CDC, soft-delete flag, hoặc so sánh snapshot.
+</details>
+
+<details><summary><b>8.</b> Trong Copy Job, trộn bảng có CDC và bảng không CDC thì sao?</summary>
+
+Toàn bộ job bị coi là **watermark-based**, tức mất lợi thế CDC (kể cả khả năng replicate delete).
+</details>
+
+<details><summary><b>9.</b> Bốn chế độ ghi của Copy Job?</summary>
+
+**Append** (mặc định), **Merge** (tương đương SCD1), **Overwrite**, **SCD Type 2** (đi kèm CDC, tự thêm cột hiệu lực).
+</details>
+
+<details><summary><b>10.</b> Surrogate key khác natural/business key thế nào và vì sao dùng surrogate?</summary>
+
+Natural key đến từ hệ nguồn (mã khách hàng), surrogate key do kho dữ liệu sinh ra (số nguyên tăng dần). Dùng surrogate để độc lập với hệ nguồn, hỗ trợ SCD2 (một business key nhiều version) và join nhanh hơn.
+</details>
+
+<details><summary><b>11.</b> Bronze/Silver/Gold — mỗi lớp dùng pattern ghi nào?</summary>
+
+Bronze: append (giữ nguyên raw + audit columns). Silver: MERGE idempotent (SCD1/SCD2). Gold: MERGE hoặc rebuild theo lịch phục vụ báo cáo.
+</details>
+
+<details><summary><b>12.</b> Ba cột audit nên có ở Bronze?</summary>
+
+`_ingested_at` (thời điểm nạp), `_source_file`/`_source_system` (nguồn gốc), `_batch_id`/run id (để truy vết và tái xử lý).
+</details>
+
+<details><summary><b>13.</b> Denormalize để làm gì khi chuẩn bị cho dimensional model?</summary>
+
+Gộp các bảng chuẩn hoá (product → subcategory → category) thành **một dimension phẳng** để giảm số join lúc truy vấn và phù hợp star schema/Power BI.
+</details>
+
+<details><summary><b>14.</b> Loading pattern cho streaming khác batch ở điểm nào?</summary>
+
+Streaming cần **checkpoint** (mỗi query một checkpoint riêng), **watermark** để giới hạn state, và vì delivery là at-least-once nên bước ghi phải **idempotent** — thường dùng `foreachBatch` + Delta `MERGE`.
+</details>
+
+## K. MINI-LAB 90 PHÚT — GÕ TỪ ĐẦU, KHÔNG COPY
+
+1. Tạo bảng nguồn giả lập 10 dòng có `CustomerId`, `City`, `ModifiedDate`.
+2. **Full load** vào bronze bằng `mode("overwrite")`; thêm ba cột audit.
+3. **Incremental watermark:** tạo bảng control lưu watermark; viết pipeline Lookup → Copy → Stored Procedure/notebook cập nhật watermark. Chạy 2 lần, xác nhận lần 2 không nạp lại dòng cũ.
+4. **Tạo lỗi có chủ đích:** nhân đôi một `CustomerId` trong nguồn rồi chạy `MERGE` → xem lỗi *multiple source rows matched* → sửa bằng dedup `row_number()`.
+5. **SCD Type 1:** đổi `City` của một khách, chạy MERGE, xác nhận chỉ có 1 dòng và giá trị đã đổi.
+6. **SCD Type 2:** thêm cột `ValidFrom/ValidTo/IsCurrent`, chạy đủ hai bước, xác nhận có 2 dòng cho khách đó và chỉ 1 dòng `IsCurrent = true`.
+7. **Late-arriving dimension:** insert fact với `CustomerId` chưa tồn tại, xác nhận nhận `CustomerKey = -1` thay vì fail.
+8. **Test idempotency:** chạy lại toàn bộ notebook lần thứ ba mà không đổi dữ liệu nguồn → số dòng ở đích **phải không đổi**. Nếu đổi, quay lại tìm điều kiện nào trong bốn điều kiện ở mục D bị thiếu.
+
+**Ngưỡng đạt:** gõ lại được đoạn MERGE idempotent và hai bước SCD2 **không nhìn tài liệu**, và trả lời đúng ≥13/14 câu ở mục J.

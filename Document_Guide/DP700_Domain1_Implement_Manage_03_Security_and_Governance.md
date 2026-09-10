@@ -949,3 +949,228 @@ df_payroll = spark.read.table("lakehouse_payroll.payroll_data") # ❌ Bị block
 
 > [!NOTE]
 > Workspace Viewer role không tự cho phép chạy notebook. Nếu muốn test bằng Spark, phải cấp `Execute` trên notebook test hoặc dùng một supported access path khác. Enforcement và limitations có thể khác nhau giữa Spark, SQL endpoint, và shortcut path; luôn kiểm tra theo từng path. Tham khảo: [Workspace roles](https://learn.microsoft.com/en-us/fabric/fundamentals/roles-workspaces) và [OneLake security per engine](https://learn.microsoft.com/en-us/fabric/onelake/security/onelake-security-overview).
+
+---
+
+# 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
+
+> **Vì sao có chương này:** *Configure security and governance* là nhóm kỹ năng **lớn nhất blueprint (8 objective)**. Điều làm thí sinh sai không phải là không biết RLS là gì, mà là không lần được **đường đi của quyền**: cùng một người dùng, đi vào bằng Spark thì thấy hết dữ liệu, đi vào bằng SQL endpoint thì bị chặn. Chương này viết lại theo hướng **giải bài toán bảo mật bằng một khung 5 bước cố định**.
+> Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
+
+## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
+
+Bảo mật Fabric là **nhiều lớp cổng nối tiếp nhau**. Người dùng phải qua được **tất cả** các cổng trên đường đi của mình:
+
+```text
+   NGƯỜI DÙNG
+       │
+       ▼
+ ┌─────────────────┐   Cổng 1: vào được workspace không, với vai trò gì?
+ │ WORKSPACE ROLE  │   Admin / Member / Contributor / Viewer
+ └────────┬────────┘
+          ▼
+ ┌─────────────────┐   Cổng 2: có quyền trên item cụ thể không?
+ │ ITEM PERMISSION │   Read / ReadData / ReadAll / Write / Reshare / Execute
+ └────────┬────────┘
+          ▼
+ ┌───────────────────────────────────────────────────────┐
+ │ CỔNG 3: ĐI VÀO BẰNG ĐƯỜNG NÀO? (access path)          │
+ │                                                       │
+ │  Spark / OneLake API ──► OneLake security (OLS/RLS/CLS)│
+ │  SQL analytics endpoint ─► T-SQL RLS / CLS / DDM       │
+ │  Semantic model ─────────► DAX RLS                     │
+ └───────────────────────────────────────────────────────┘
+```
+
+**Câu quan trọng nhất của cả mục này:**
+
+> **Chính sách bảo mật gắn với ĐƯỜNG ĐI, không gắn với con người.** Cùng một user, đi đường khác nhau thì chính sách áp khác nhau. Đây là nguồn gốc của gần như mọi câu hỏi "vì sao user vẫn thấy dữ liệu?".
+
+## B. KHUNG 5 BƯỚC — DÙNG CHO MỌI CÂU HỎI BẢO MẬT
+
+```text
+1. IDENTITY nào?        user cá nhân · security group · service principal · workspace identity
+2. WORKSPACE ROLE gì?   Admin / Member / Contributor  →  BYPASS OneLake RLS/CLS
+                        Viewer                        →  BỊ RÀNG BUỘC
+3. ITEM PERMISSION gì?  Read (kết nối) · ReadData (qua SQL endpoint) · ReadAll (qua OneLake/Spark)
+                        Write · Reshare · Execute (chạy notebook)
+4. ACCESS PATH nào?     Spark | SQL analytics endpoint | OneLake API/shortcut | Semantic model
+5. DATA POLICY nào áp?  OneLake security (OLS/RLS/CLS) | T-SQL RLS/CLS/DDM | DAX RLS
+```
+
+**Áp dụng thử — câu hỏi kinh điển:**
+
+> *Bạn tạo RLS trên bảng trong SQL analytics endpoint để user chỉ thấy vùng của mình. Nhưng user vẫn thấy toàn bộ dữ liệu. Vì sao?*
+
+- Bước 2: user đang là **Contributor** → **bypass** chính sách granular. **Đây là nguyên nhân số 1.**
+- Bước 4: hoặc user đang đọc bằng **Spark/OneLake**, trong khi RLS bạn tạo chỉ áp cho **SQL endpoint**.
+- Cách sửa: hạ về **Viewer** (hoặc cấp quyền item ở mức đọc), và/hoặc áp **OneLake security** để chặn cả đường Spark.
+
+## C. WORKSPACE ROLE — BẢNG PHẢI VIẾT LẠI ĐƯỢC TỪ TRÍ NHỚ
+
+| Hành động | Admin | Member | Contributor | Viewer |
+|---|:---:|:---:|:---:|:---:|
+| Xoá workspace, đổi workspace settings | ✅ | ❌ | ❌ | ❌ |
+| Thêm/xoá người | ✅ mọi role | ⚠️ tới mức Member | ❌ | ❌ |
+| Tạo/sửa/xoá item | ✅ | ✅ | ✅ | ❌ |
+| Chạy notebook / pipeline | ✅ | ✅ | ✅ | ❌ |
+| Reshare item | ✅ | ✅ | ⚠️ chỉ khi được cấp Reshare ở item | ❌ |
+| Đọc qua SQL analytics endpoint | ✅ | ✅ | ✅ | ✅ |
+| **Bị RLS/CLS/DDM ràng buộc** | ❌ | ❌ | ❌ | ✅ |
+
+> 📌 Ba hệ quả phải thuộc: (1) muốn áp RLS → dùng **Viewer**; (2) **test** RLS phải bằng tài khoản Viewer, test bằng Contributor sẽ luôn thấy hết và bạn tưởng RLS hỏng; (3) Viewer **không chạy được notebook** — cần quyền Execute riêng.
+
+## D. ITEM PERMISSION — PHÂN BIỆT READDATA vs READALL
+
+```text
+Read      → kết nối tới item, thấy metadata
+ReadData  → ĐỌC BẢNG qua SQL ANALYTICS ENDPOINT
+ReadAll   → ĐỌC TRỰC TIẾP file/bảng qua ONELAKE API / SPARK / Lakehouse explorer
+Write     → sửa item
+Reshare   → chia sẻ lại cho người khác
+Execute   → chạy item (ví dụ notebook)
+```
+
+> 📌 Cấp **ReadData** không tự động cho phép đọc file bằng Spark. Đề hỏi "user cần đọc bằng notebook Spark" mà đáp án chỉ cấp ReadData → sai.
+
+## E. ONELAKE SECURITY — CÁCH KẾT HỢP QUYỀN
+
+```text
+TRONG MỘT ROLE:  quyền = GIAO của ba lớp
+                 OLS (bảng/folder nào)  ∩  RLS (dòng nào)  ∩  CLS (cột nào)
+
+NHIỀU ROLE:      kết quả = MOST PERMISSIVE (hợp của các role)
+                 → user thuộc 2 role thì thấy phần rộng hơn, không phải phần hẹp hơn
+```
+
+Điều này rất hay bị nhớ ngược. Cách nhớ: **trong một role thì thắt chặt (giao); giữa các role thì nới rộng (hợp)**.
+
+**SQL analytics endpoint có hai chế độ bảo mật — phải phân biệt:**
+
+| Chế độ | Chính sách nào áp | Ghi chú |
+|---|---|---|
+| **User identity mode** | Áp **OneLake security roles** của chính người dùng | Role OneLake được đồng bộ sang endpoint |
+| **Delegated / owner identity mode** | Áp quyền **T-SQL**: `GRANT`/`REVOKE`, RLS/CLS/DDM ở tầng SQL | Cách truyền thống |
+
+Chuyển đổi giữa hai chế độ khiến endpoint **tạm thời không khả dụng cho cả workspace** → phải làm trong maintenance window.
+
+## F. RLS / CLS / DDM — MỖI CÁI GIẢI QUYẾT GÌ
+
+| Kỹ thuật | Giới hạn theo | Ví dụ | Ghi chú thi |
+|---|---|---|---|
+| **RLS** (row-level) | **Dòng** | Sales rep chỉ thấy vùng của mình | Có ở tầng T-SQL (security policy + filter predicate), OneLake security, và semantic model (DAX) |
+| **CLS** (column-level) | **Cột** | Ẩn hẳn cột `Salary` | Người không có quyền sẽ **lỗi** khi `SELECT` cột đó |
+| **DDM** (dynamic data masking) | **Hiển thị** của cột | `1234-5678-****` | Cột **vẫn truy vấn được** — không phải ranh giới bảo mật đầy đủ |
+| **OLS** (object/table-level) | **Bảng/folder** | Không thấy bảng `HR_Payroll` | Trong OneLake security là phạm vi bảng/folder |
+
+> ⚠️ **DDM không phải cơ chế bảo mật hoàn chỉnh.** User có quyền query vẫn có thể suy ra giá trị bằng cách lọc/so sánh (`WHERE Salary > 1000`). Khi đề yêu cầu "người dùng tuyệt đối không được biết giá trị", đáp án phải là **CLS hoặc phân quyền thật**, không phải DDM.
+
+**RLS ở Warehouse vs RLS ở semantic model — chọn cái nào:**
+
+| Tình huống | Chọn |
+|---|---|
+| Bảo vệ dữ liệu ở tầng kho, mọi công cụ SQL đều bị áp | **RLS trong Warehouse (T-SQL)** |
+| Model **Direct Lake** cần giữ chế độ Direct Lake | **RLS trong semantic model (DAX)** — vì RLS ở SQL endpoint gây **fallback DirectQuery** |
+| Bảo vệ cả đường Spark/OneLake | **OneLake security** |
+| An toàn nhất | Kết hợp nhiều tầng theo đúng access path cần chặn |
+
+## G. NHÃN, ENDORSEMENT, AUDIT — BA THỨ HAY BỊ TRỘN
+
+| | Sensitivity label | Endorsement | Audit log |
+|---|---|---|---|
+| Mục đích | **Phân loại + bảo vệ** dữ liệu (Purview) | Chỉ dấu **độ tin cậy/chất lượng** | Ghi lại **ai làm gì, khi nào** |
+| Giá trị | Public / Internal / Confidential… | **Promoted**, **Certified**, (Master data) | — |
+| Có chặn truy cập không? | Có thể áp protection policy | **KHÔNG** — chỉ là nhãn tin cậy | Không, chỉ ghi nhận |
+| Đặc điểm cần nhớ | **Kế thừa** xuống downstream item (ví dụ semantic model → report) | Certified do người được uỷ quyền duyệt | Truy cập qua Microsoft Purview / Microsoft 365 audit |
+
+> 📌 Đề hỏi "làm sao để người dùng biết dataset nào đáng tin cậy" → **Endorsement**. Đề hỏi "làm sao để dữ liệu nhạy cảm được phân loại và bảo vệ khi tải xuống" → **Sensitivity label**. Đừng đảo hai đáp án này.
+
+## H. BỘ QUYẾT ĐỊNH — ĐỌC ĐỀ CHỌN ĐƯỢC NGAY
+
+| Đề nói… | Chọn |
+|---|---|
+| "read-only và chỉ thấy dữ liệu vùng mình" | **Viewer** + RLS (hoặc OneLake security) |
+| "user phải đọc dữ liệu bằng notebook Spark" | Item permission **ReadAll** (+ Execute trên notebook nếu phải chạy) |
+| "ẩn hoàn toàn cột lương với nhóm A" | **CLS** (không phải DDM) |
+| "che số thẻ nhưng vẫn cho query bảng" | **DDM** |
+| "chặn cả đường Spark lẫn SQL cho cùng một tập dòng" | **OneLake security** (RLS ở OneLake), không chỉ RLS T-SQL |
+| "giữ Direct Lake mà vẫn có bảo mật dòng" | **RLS trong semantic model (DAX)** |
+| "đánh dấu dataset chuẩn cho toàn công ty" | **Endorsement: Certified** |
+| "dữ liệu nhạy cảm phải được phân loại và kế thừa nhãn" | **Sensitivity label** |
+| "ai đã xoá workspace tuần trước?" | **Audit log** |
+| "gom workspace theo phòng ban để uỷ quyền quản trị" | **Domain** (không phải cơ chế phân quyền dữ liệu) |
+
+## I. ACTIVE RECALL — 12 CÂU (che đáp án, nói thành tiếng)
+
+<details><summary><b>1.</b> Năm bước giải một câu hỏi bảo mật?</summary>
+
+Identity → workspace role → item permission → access path → data policy.
+</details>
+
+<details><summary><b>2.</b> Role nào bypass OneLake RLS/CLS?</summary>
+
+**Admin, Member, Contributor**. Chỉ **Viewer** (và quyền item ở mức đọc) bị ràng buộc.
+</details>
+
+<details><summary><b>3.</b> ReadData và ReadAll khác nhau ra sao?</summary>
+
+ReadData = đọc qua **SQL analytics endpoint**. ReadAll = đọc trực tiếp file/bảng qua **OneLake API/Spark**.
+</details>
+
+<details><summary><b>4.</b> Trong một OneLake security role, OLS/RLS/CLS kết hợp thế nào? Giữa nhiều role thì sao?</summary>
+
+Trong một role: **giao** (thắt chặt). Giữa nhiều role: **most permissive** — hợp các role (nới rộng).
+</details>
+
+<details><summary><b>5.</b> Hai chế độ bảo mật của SQL analytics endpoint?</summary>
+
+**User identity mode** (áp OneLake security roles) và **delegated/owner identity mode** (áp quyền T-SQL: GRANT/REVOKE, RLS/CLS/DDM). Đổi chế độ làm endpoint tạm thời không khả dụng.
+</details>
+
+<details><summary><b>6.</b> DDM có phải ranh giới bảo mật đầy đủ không? Vì sao?</summary>
+
+**Không.** Cột vẫn query được nên user có thể suy ra giá trị bằng cách lọc/so sánh. Muốn chặn thật thì dùng **CLS** hoặc phân quyền.
+</details>
+
+<details><summary><b>7.</b> Vì sao RLS ở SQL endpoint lại gây vấn đề cho Direct Lake?</summary>
+
+Direct Lake **on SQL endpoint** phát hiện RLS/CLS/DDM ở tầng SQL sẽ **fallback sang DirectQuery** → chậm. Muốn giữ Direct Lake thì đặt RLS trong **semantic model (DAX)**.
+</details>
+
+<details><summary><b>8.</b> Endorsement có chặn truy cập không?</summary>
+
+**Không.** Promoted/Certified chỉ là tín hiệu độ tin cậy, hoàn toàn không phải cơ chế bảo mật.
+</details>
+
+<details><summary><b>9.</b> Sensitivity label có đặc điểm gì đáng nhớ nhất?</summary>
+
+**Kế thừa** xuống downstream item (ví dụ semantic model → report), và có thể đi kèm protection policy của Purview.
+</details>
+
+<details><summary><b>10.</b> Test RLS thế nào cho đúng?</summary>
+
+Dùng tài khoản **Viewer** (hoặc user chỉ có quyền item ở mức đọc). Test bằng Contributor sẽ luôn thấy hết dữ liệu.
+</details>
+
+<details><summary><b>11.</b> Domain trong Fabric có phân quyền dữ liệu không?</summary>
+
+**Không.** Domain là cơ chế **tổ chức và uỷ quyền quản trị** (gán workspace, domain admin, default sensitivity label), không phải cơ chế kiểm soát truy cập dữ liệu.
+</details>
+
+<details><summary><b>12.</b> User bị chặn ở SQL endpoint nhưng vẫn đọc được file bằng Spark — vì sao và sửa thế nào?</summary>
+
+Vì chính sách T-SQL chỉ áp cho **đường SQL endpoint**. Muốn chặn cả đường Spark/OneLake phải dùng **OneLake security** (và kiểm tra item permission ReadAll).
+</details>
+
+## J. MINI-LAB 60 PHÚT
+
+1. Tạo lakehouse có bảng `sales` gồm cột `Region` và `Salary`.
+2. Mời một tài khoản test làm **Viewer**. Xác nhận tài khoản đó đọc được bảng qua SQL endpoint nhưng **không chạy được notebook**.
+3. Tạo **RLS ở SQL endpoint** lọc theo `Region`. Đăng nhập tài khoản Viewer → xác nhận chỉ thấy vùng của mình.
+4. Nâng tài khoản test lên **Contributor** → truy vấn lại → xác nhận **thấy toàn bộ** (chứng minh bypass). Hạ về Viewer.
+5. Áp **CLS** để ẩn cột `Salary`; thử `SELECT Salary` bằng tài khoản Viewer → quan sát lỗi. Sau đó thay bằng **DDM** và so sánh hành vi (che hiển thị nhưng vẫn query được).
+6. Tạo **OneLake security role** giới hạn theo `Region`; cấp **ReadAll** cho tài khoản test; thử đọc bằng Spark → xác nhận bị giới hạn giống SQL endpoint.
+7. Gán **sensitivity label** cho lakehouse; tạo semantic model trên đó và quan sát **nhãn được kế thừa**.
+8. **Endorse** một semantic model ở mức Promoted; xác nhận việc này không thay đổi quyền truy cập của ai.
+
+**Ngưỡng đạt:** đọc thuộc khung 5 bước ở mục B, giải được 5 scenario bảo mật bất kỳ mà không cần gợi ý, và trả lời đúng ≥11/12 câu ở mục I.
