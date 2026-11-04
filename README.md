@@ -1,10 +1,10 @@
 # DP-700 — Bắt đầu từ đây
 
-> **Bản đánh giá và đối chiếu ngày 09/08/2026.** Blueprint dùng trong bộ tài liệu là **Skills measured as of July 21, 2026**. Trước ngày thi, luôn kiểm tra lại [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) vì Microsoft Fabric thay đổi nhanh.
+> **Bản cập nhật ngày 05/11/2026** (bản trước: 09/08/2026). Blueprint dùng trong bộ tài liệu là [DP-700 Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) — trang được Microsoft cập nhật **30/10/2026**, hiện **49 bullet**, ba domain đều **30–35%**. Trang không còn ghi "Skills measured as of" và không có change log; các thay đổi so với bản 21/07/2026 được tóm tắt ở đầu file [MASTER](Document_Guide/DP700_00_MASTER_Trong_Tam_On_Thi.md) (mục ⚡ CẬP NHẬT 05/11/2026). Trước ngày thi, luôn kiểm tra lại Study Guide vì Microsoft Fabric thay đổi nhanh.
 
 ## Kết luận đánh giá
 
-**Bộ tài liệu hiện đã phủ đủ 54/54 objective được liệt kê trong blueprint DP-700 hiện hành**, có ví dụ SQL, PySpark, KQL, pipeline expressions, câu hỏi scenario, lab và hyperlink tới tài liệu chính thức.
+**Bộ tài liệu hiện phủ đủ 49/49 bullet của study guide hiện hành, cộng các related topic của bản 21/07/2026 (audit logs, OneLake security, native tables vs shortcuts, query acceleration, shortcut errors)**, có ví dụ SQL, PySpark, KQL, pipeline expressions, câu hỏi scenario, lab và hyperlink tới tài liệu chính thức.
 
 Tuy nhiên, câu trả lời trung thực cho câu hỏi “đã đủ để trả lời mọi câu hỏi chưa?” là **chưa thể bảo đảm chỉ bằng việc đọc tài liệu**. Microsoft ghi rõ các bullet trong Study Guide chỉ minh họa cách đánh giá; đề có thể hỏi các chủ đề liên quan. Phần lớn câu hỏi dùng tính năng GA, nhưng Preview feature phổ biến vẫn có thể xuất hiện. Vì vậy readiness phải gồm cả:
 
@@ -14,23 +14,23 @@ Tuy nhiên, câu trả lời trung thực cho câu hỏi “đã đủ để tr�
 4. Tự làm lab trong tenant Fabric, không chỉ đọc đáp án.
 5. Làm [Microsoft Practice Assessment](https://learn.microsoft.com/en-us/credentials/certifications/fabric-data-engineer-associate/) và xem [Exam Sandbox](https://aka.ms/examdemo).
 
-## Ma trận bao phủ blueprint 54/54
+## Ma trận bao phủ study guide 49/49 (cập nhật 05/11/2026)
 
 | Domain | Functional group | Số objective | Tài liệu chính | Coverage |
 |---|---|---:|---|:---:|
-| Implement and manage | Configure workspace settings | 4 | [Workspace Settings](Document_Guide/DP700_Domain1_Implement_Manage_01_Workspace_Settings.md) | 4/4 |
+| Implement and manage | Configure workspace settings (Spark, domain, OneLake, **data workflow**) | 4 | [Workspace Settings](Document_Guide/DP700_Domain1_Implement_Manage_01_Workspace_Settings.md) | 4/4 |
 | Implement and manage | Implement lifecycle management | 3 | [Lifecycle Management](Document_Guide/DP700_Domain1_Implement_Manage_02_Lifecycle_Management.md) | 3/3 |
-| Implement and manage | Configure security and governance | 8 | [Security and Governance](Document_Guide/DP700_Domain1_Implement_Manage_03_Security_and_Governance.md) | 8/8 |
+| Implement and manage | Configure security and governance | 6 (+2 related) | [Security and Governance](Document_Guide/DP700_Domain1_Implement_Manage_03_Security_and_Governance.md) | 6/6 |
 | Implement and manage | Orchestrate processes | 3 | [Orchestrate Processes](Document_Guide/DP700_Domain1_Implement_Manage_04_Orchestrate_Processes.md) | 3/3 |
 | Ingest and transform | Design and implement loading patterns | 3 | [Loading Patterns](Document_Guide/DP700_Domain2_Ingest_Transform_01_Design_Loading_Patterns.md) | 3/3 |
 | Ingest and transform | Ingest and transform batch data | 9 | [Batch Data](Document_Guide/DP700_Domain2_Ingest_Transform_02_Batch_Data.md) | 9/9 |
-| Ingest and transform | Ingest and transform streaming data | 7 | [Streaming Data](Document_Guide/DP700_Domain2_Ingest_Transform_03_Streaming_Data.md) | 7/7 |
+| Ingest and transform | Ingest and transform streaming data | 5 (+2 related) | [Streaming Data](Document_Guide/DP700_Domain2_Ingest_Transform_03_Streaming_Data.md) | 5/5 |
 | Monitor and optimize | Monitor Fabric items | 4 | [Monitor Items and Alerts](Document_Guide/DP700_Domain3_Monitor_Optimize_01_Monitor_Items_Alerts.md) | 4/4 |
-| Monitor and optimize | Identify and resolve errors | 7 | [Identify and Resolve Errors](Document_Guide/DP700_Domain3_Monitor_Optimize_02_Identify_Resolve_Errors.md) | 7/7 |
+| Monitor and optimize | Identify and resolve errors | 6 (+1 related) | [Identify and Resolve Errors](Document_Guide/DP700_Domain3_Monitor_Optimize_02_Identify_Resolve_Errors.md) | 6/6 |
 | Monitor and optimize | Optimize performance | 6 | [Optimize Performance](Document_Guide/DP700_Domain3_Monitor_Optimize_03_Optimize_Performance.md) | 6/6 |
-| **Tổng** | **10 functional groups** | **54** | **10 file chuyên đề** | **54/54** |
+| **Tổng** | **10 functional groups** | **49** (+5 related) | **10 file chuyên đề** | **49/49** |
 
-> **Coverage 54/54 không có nghĩa xác suất đậu 100%.** Coverage đo sự hiện diện của kiến thức; readiness đo khả năng áp dụng dưới dạng case study, multiple choice, build list, drag-and-drop và câu hỏi có nhiều đáp án gần đúng.
+> **Coverage 49/49 không có nghĩa xác suất đậu 100%.** Coverage đo sự hiện diện của kiến thức; readiness đo khả năng áp dụng dưới dạng case study, multiple choice, build list, drag-and-drop và câu hỏi có nhiều đáp án gần đúng.
 
 ## Thông tin kỳ thi cần biết
 
@@ -133,19 +133,22 @@ Vì sao ba đáp án còn lại sai?
 - Không bật Spark Autotune với Runtime 2.0: tài liệu hiện hành vẫn giới hạn Autotune ở Runtime 1.2.
 - Admin/Member/Contributor bypass OneLake RLS/CLS; test granular security bằng Viewer hoặc item-level user phù hợp.
 
-## Snapshot tính năng dễ đổi — 09/08/2026
+## Snapshot tính năng dễ đổi — cập nhật 05/11/2026
 
 | Tính năng | Trạng thái/giới hạn cần nhớ tại thời điểm đối chiếu | Link kiểm tra live |
 |---|---|---|
-| DP-700 blueprint | Có hiệu lực 21/07/2026 | [Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) |
-| Fabric Runtime 2.0 | Public Preview; Spark 4.1, Delta 4.2, Python 3.13 | [Runtime 2.0](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0) |
-| Spark Autotune | Preview, off by default, chỉ tương thích Runtime 1.2 theo current docs | [Autotune](https://learn.microsoft.com/en-us/fabric/data-engineering/autotune) |
-| OneLake security | Preview, enable theo item; RLS/CLS chỉ qua supported/authorized engines | [Get started](https://learn.microsoft.com/en-us/fabric/onelake/security/get-started-onelake-security) |
+| DP-700 study guide | Trang cập nhật 30/10/2026; 49 bullet (bản trước 21/07/2026) | [Study Guide](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) |
+| Fabric Runtime 2.0 | **GA, mặc định** cho workspace/Environment mới (10/2026); Spark 4.1, Delta 4.2, Python 3.13, Java 21, Scala 2.13. Runtime 1.3 = EOSA. `EventHubConnector` bị gỡ → Kafka endpoint | [Runtime 2.0](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0) |
+| Spark Autotune | Preview, off by default, chỉ tương thích Runtime 1.2 → không bật được trên 1.3/2.0 | [Autotune](https://learn.microsoft.com/en-us/fabric/data-engineering/autotune) |
+| OneLake security | Trang Learn (09/2026) không ghi nhãn GA/Preview tổng thể; **enforcement trong authorized third-party engines: Preview**. Admin/Member/Contributor không bị roles ràng buộc | [Get started](https://learn.microsoft.com/en-us/fabric/onelake/security/get-started-onelake-security) |
 | Warehouse `IDENTITY` | Preview; chỉ `BIGINT`, không seed/increment custom | [IDENTITY](https://learn.microsoft.com/en-us/fabric/data-warehouse/identity) |
 | Warehouse data clustering | Preview; `CLUSTER BY`, 1–4 columns | [Data clustering](https://learn.microsoft.com/en-us/fabric/data-warehouse/data-clustering) |
-| Materialized Lake Views | GA trong Lakehouse; không phải Warehouse materialized view | [Materialized Lake Views](https://learn.microsoft.com/en-us/fabric/data-engineering/materialized-lake-views/overview-materialized-lake-view) |
+| Materialized Lake Views | Lakehouse (không phải Warehouse MV); SQL authoring; **PySpark authoring Preview** (chỉ full refresh); incremental refresh cần CDF | [Materialized Lake Views](https://learn.microsoft.com/en-us/fabric/data-engineering/materialized-lake-views/overview-materialized-lake-view) |
 | Custom live pools | Preview trong Runtime 2.0 | [Runtime 2.0](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0#compute-management-in-runtime-20) |
-| Fabric Apache Airflow network | Private/VNet chưa được hỗ trợ theo current docs | [Airflow workspace settings](https://learn.microsoft.com/en-us/fabric/data-factory/apache-airflow-jobs-workspace-settings) |
+| Fabric Apache Airflow job ("data workflow") | Airflow 2.10.5, Python 3.12; Private/VNet chưa được hỗ trợ; không đổi version Airflow của job đã tạo | [Airflow workspace settings](https://learn.microsoft.com/en-us/fabric/data-factory/apache-airflow-jobs-workspace-settings) |
+| Copy job SCD Type 2 | Preview; cột `Valid_From`, `Valid_To`, `Is_Current`; chưa hỗ trợ CDC từ Oracle | [CDC in Copy job](https://learn.microsoft.com/fabric/data-factory/cdc-copy-job) |
+| Workspace-level surge protection | Preview; ngưỡng % CU/24h, Available/Mission critical/Blocked | [Surge protection](https://learn.microsoft.com/en-us/fabric/enterprise/surge-protection) |
+| Git — đổi branch | Admin; hoặc Contributor/Member khi bật *Allow users with at least Contributor role to change Git branch* | [Git permissions](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process) |
 | OneLake lifecycle management | 1 policy/workspace, tối đa 10 rules, tier Hot/Cool/Cold | [Lifecycle management](https://learn.microsoft.com/en-us/fabric/onelake/onelake-lifecycle-management) |
 
 > Các trạng thái trên là ảnh chụp kiến thức để ôn thi, không phải cam kết roadmap. Kiểm tra lại trong tuần thi tại [What’s new in Fabric](https://learn.microsoft.com/en-us/fabric/fundamentals/whats-new) và [Fabric known issues](https://support.fabric.microsoft.com/known-issues/).
@@ -154,9 +157,9 @@ Vì sao ba đáp án còn lại sai?
 
 Các ngưỡng dưới đây là tiêu chuẩn tự học khuyến nghị, **không phải quy định chính thức của Microsoft**:
 
-- [ ] Tự giải thích 54 objective mà không đọc nguyên văn tài liệu.
+- [ ] Tự giải thích 49 bullet (và 5 related topic) mà không đọc nguyên văn tài liệu.
 - [ ] Đạt ít nhất **85%** câu scenario trong từng domain, không chỉ 85% tổng.
-- [ ] Làm Microsoft Practice Assessment ít nhất hai lượt; lượt sau đạt ổn định và giải thích được đáp án sai.
+- [ ] Làm Microsoft Practice Assessment **bản mới trên AI Skills Navigator** ([aka.ms/DP700-PA](http://aka.ms/DP700-PA); bản legacy trên Learn không còn được cập nhật) ít nhất hai lượt; lượt sau đạt ổn định và giải thích được đáp án sai.
 - [ ] Tự hoàn thành các lab full/incremental load, SCD2, pipeline, streaming, KQL, T-SQL security, monitoring và optimization.
 - [ ] Viết được từ trí nhớ một ví dụ SQL, PySpark và KQL end-to-end.
 - [ ] Phân biệt được Monitoring Hub với Capacity Metrics; `OPTIMIZE` với `VACUUM`; shortcut với mirroring; Pipeline với Dataflow Gen2 với Notebook.

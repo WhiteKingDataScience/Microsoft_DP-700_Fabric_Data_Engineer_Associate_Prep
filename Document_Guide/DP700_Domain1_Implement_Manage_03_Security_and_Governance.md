@@ -1,9 +1,9 @@
 # DP-700: Configure Security and Governance
 ## Implement and manage an analytics solution (30–35%)
-### Skills measured as of July 21, 2026
+### Đối chiếu Study Guide DP-700 (trang cập nhật 30/10/2026)
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
 
 > [!CAUTION]
@@ -445,6 +445,8 @@ Endorsement là **trust/discovery/governance signal**, không tự cấp data ac
 
 ## 8. IMPLEMENT AND USE MICROSOFT FABRIC AUDIT LOGS
 
+> **Cập nhật 05/11/2026:** audit logs không còn là bullet riêng trong study guide hiện hành — xếp vào **related topic**. Ôn ở mức nhận diện: câu hỏi "ai đã làm gì, khi nào" → audit log (Microsoft Purview).
+
 ### 8.1 Audit log trả lời câu hỏi nào?
 
 Audit log dùng cho **who did what, on which item, when** — phục vụ compliance, investigation và records management.
@@ -467,6 +469,8 @@ Audit retention phụ thuộc Microsoft Purview Audit licensing và retention po
 → Tìm **Microsoft Purview audit log**, không dùng Monitoring Hub hoặc Capacity Metrics app.
 
 ## 9. CONFIGURE AND IMPLEMENT ONELAKE SECURITY
+
+> **Cập nhật 05/11/2026:** OneLake security không còn bullet riêng, nhưng nó là **cơ chế thực hiện** bullet "row-level, column-level, object-level, and **file-level** access controls" trên Lakehouse — **vẫn là trọng tâm**.
 
 ### 9.1 Mental model: Control plane trước, data plane sau
 
@@ -954,7 +958,7 @@ df_payroll = spark.read.table("lakehouse_payroll.payroll_data") # ❌ Bị block
 
 # 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
 
-> **Vì sao có chương này:** *Configure security and governance* là nhóm kỹ năng **lớn nhất blueprint (8 objective)**. Điều làm thí sinh sai không phải là không biết RLS là gì, mà là không lần được **đường đi của quyền**: cùng một người dùng, đi vào bằng Spark thì thấy hết dữ liệu, đi vào bằng SQL endpoint thì bị chặn. Chương này viết lại theo hướng **giải bài toán bảo mật bằng một khung 5 bước cố định**.
+> **Vì sao có chương này:** *Configure security and governance* là nhóm kỹ năng có **6 bullet trong study guide hiện hành** (bản 21/07/2026 có 8, gồm cả audit logs và OneLake security). Điều làm thí sinh sai không phải là không biết RLS là gì, mà là không lần được **đường đi của quyền**: cùng một người dùng, đi vào bằng Spark thì thấy hết dữ liệu, đi vào bằng SQL endpoint thì bị chặn. Chương này viết lại theo hướng **giải bài toán bảo mật bằng một khung 5 bước cố định**.
 > Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
 
 ## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
@@ -1174,3 +1178,62 @@ Vì chính sách T-SQL chỉ áp cho **đường SQL endpoint**. Muốn chặn c
 8. **Endorse** một semantic model ở mức Promoted; xác nhận việc này không thay đổi quyền truy cập của ai.
 
 **Ngưỡng đạt:** đọc thuộc khung 5 bước ở mục B, giải được 5 scenario bảo mật bất kỳ mà không cần gợi ý, và trả lời đúng ≥11/12 câu ở mục I.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — SECURITY AND GOVERNANCE
+
+## U1. Sáu bullet chính thức và cách map vào file này
+
+| Bullet (study guide 30/10/2026) | Mục trong file | Cơ chế cần nắm |
+|---|---|---|
+| Implement workspace-level access controls | 2 | 4 workspace role; Admin/Member/Contributor đọc-ghi toàn bộ dữ liệu workspace |
+| Implement item-level access controls | 3 | Share item: Read, ReadData, ReadAll, Build, Write… |
+| Implement **row-level, column-level, object-level, and file-level** access controls | 4, 9 | **SQL**: RLS (security policy + predicate function), CLS (`GRANT SELECT (cols)`), OLS (`GRANT/DENY` trên object). **OneLake security roles**: table/folder (file-level), RLS, CLS trên Lakehouse. **Semantic model**: RLS/OLS |
+| Implement dynamic data masking | 5 | `MASKED WITH (FUNCTION = 'default()' / 'email()' / 'partial(...)' / 'random(...)')`, `UNMASK` |
+| Apply sensitivity labels to items | 6 | Purview labels, inheritance, default label theo domain |
+| Endorse items | 7 | Promoted / Certified / Master data — **không phải** security |
+| *(related)* Audit logs | 8 | Purview audit |
+| *(related)* OneLake security như một cơ chế | 9 | Data access roles, DefaultReader |
+
+## U2. OneLake security — các điểm đối chiếu lại (Learn, 09/2026)
+
+- **Admin, Member, Contributor không bị OneLake security roles ràng buộc** — họ đã có read/write mọi dữ liệu trong workspace. **Viewer** và người chỉ có **Read item permission** thì **bị** ràng buộc.
+- Mỗi Lakehouse có role dựng sẵn **DefaultReader**. Muốn giới hạn một Viewer chỉ thấy một folder/table → tạo role mới với scope hẹp **và loại user khỏi DefaultReader** (nếu không, quyền rộng của DefaultReader thắng vì nhiều role cộng dồn theo kiểu *most permissive*).
+- **SQL analytics endpoint** phụ thuộc chế độ truy cập: *user identity* áp OneLake security của người dùng; *delegated identity* dùng quyền SQL (GRANT/REVOKE, RLS/CLS/DDM) và có thể cần ReadData.
+- **Enforce OneLake security in authorized third-party engines** là **Preview**: engine bên ngoài được ủy quyền áp table permission, RLS, CLS lúc truy vấn.
+
+## U3. Tính năng governance mới (Preview, 09/2026) — nhận diện
+
+| Tính năng | Một dòng |
+|---|---|
+| **Item soft-delete and recovery events** | Sự kiện vòng đời item (soft-delete, recover) phát vào Real-Time Hub để tự động hóa và audit |
+| **Snowflake security-role mirroring** | Đưa định nghĩa role của Snowflake sang Fabric khi mirror |
+| **Workspace outbound access protection** mở rộng cho RTI, Fabric Maps, Operations Agent | Kiểm soát kết nối ra ngoài ở cấp workspace |
+
+## U4. Câu hỏi tình huống cập nhật
+
+<details><summary><b>SG-U1.</b> Analyst được gán workspace role Contributor. Bạn tạo OneLake security role chỉ cho đọc folder `Files/finance`. Analyst vẫn thấy mọi thứ. Vì sao, sửa thế nào?</summary>
+
+Contributor **không bị** OneLake security roles ràng buộc. Hạ analyst xuống **Viewer** (hoặc chỉ share item với Read), gán vào role có scope `Files/finance`, và **loại khỏi DefaultReader**.
+</details>
+
+<details><summary><b>SG-U2.</b> Yêu cầu: người dùng truy vấn qua SQL analytics endpoint chỉ thấy dòng thuộc vùng của mình, còn Spark notebook của data engineer (Contributor) đọc đầy đủ. Lớp nào?</summary>
+
+Với endpoint ở **user identity mode**: định nghĩa **RLS trong OneLake security role** — áp dụng nhất quán qua các engine hỗ trợ cho người bị ràng buộc (Viewer/Read). Với **delegated mode**: dùng **SQL RLS** (`CREATE SECURITY POLICY ... ADD FILTER PREDICATE`). Data engineer là Contributor nên không bị giới hạn ở cả hai cách.
+</details>
+
+<details><summary><b>SG-U3.</b> Cột `Email` phải hiện dạng `aXX@XXXX.com` cho analyst, nhưng nhóm compliance xem được giá trị thật. T-SQL nào?</summary>
+
+```sql
+ALTER TABLE dbo.Customer
+ALTER COLUMN Email ADD MASKED WITH (FUNCTION = 'email()');
+GRANT UNMASK TO [compliance-group];
+```
+DDM không phải ranh giới bảo mật tuyệt đối — người có quyền truy vấn tự do vẫn có thể suy luận giá trị; cần kết hợp RLS/CLS khi dữ liệu thật sự nhạy cảm.
+</details>
+
+<details><summary><b>SG-U4.</b> Đáp án "Certified endorsement giới hạn ai được đọc semantic model" đúng hay sai?</summary>
+
+**Sai.** Endorsement chỉ là tín hiệu tin cậy để tìm kiếm/khám phá; không thay đổi quyền truy cập.
+</details>

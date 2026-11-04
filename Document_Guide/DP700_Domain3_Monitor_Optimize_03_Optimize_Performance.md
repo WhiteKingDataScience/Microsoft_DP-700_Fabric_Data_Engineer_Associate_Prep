@@ -3,9 +3,9 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
-> **Skills measured as of July 21, 2026**  
+> **Đối chiếu Study Guide DP-700 — trang cập nhật 30/10/2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
 > Tham chiếu: [Microsoft Learn — Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 
@@ -310,11 +310,13 @@ WITH
 );
 ```
 
-Rules:
-- 1–4 clustering columns;
-- chọn cột thường filter;
-- có ingestion overhead;
-- current feature Preview.
+Rules (đối chiếu Learn 11/2026):
+- 1–4 clustering columns; thứ tự cột trong `CLUSTER BY` **không** ảnh hưởng;
+- chọn cột **mid/high cardinality** thường xuất hiện trong `WHERE` (ID, ngày); cột ít giá trị (giới tính, vùng) lợi ích thấp; **equality join không hưởng lợi**;
+- chỉ khai báo lúc `CREATE TABLE` hoặc **CTAS**; **không** thêm/đổi sau; `SELECT INTO` không hỗ trợ; không dùng cột `IDENTITY`;
+- kiểu không hỗ trợ: `bit`, `varchar(max)`, `varbinary`, `uniqueidentifier`; `decimal` precision > 18 không push-down predicate;
+- có ingestion overhead (chậm hơn, tốn CU hơn);
+- current feature **Preview**.
 
 ### 3.6. Warehouse V-Order
 
@@ -483,13 +485,13 @@ spark.conf.set("spark.ms.autotune.enabled", "true")
 
 Current docs nói Autotune **chỉ tương thích Runtime 1.2** và không bật được trên runtime >1.2.
 
-Runtime 1.2 đã end-of-support 31/03/2026; Microsoft khuyến nghị production Runtime 1.3.
+Runtime 1.2 đã end-of-support 31/03/2026. Từ 10/2026, **Runtime 2.0 là GA và mặc định** (Runtime 1.3 = EOSA) → trên cả hai runtime đang dùng, Autotune **không bật được**.
 
 > ⚠️ **Không ghép “Runtime 2.0 + Spark Autotune” thành best practice.**
 
 ### 5.6. Runtime 2.0
 
-Runtime 2.0 Preview có Spark 4.1/Delta 4.2 và Native Execution Engine improvements.
+Runtime 2.0 — **GA, mặc định cho workspace/Environment mới, khuyến nghị cho production (10/2026)** — có Spark 4.1/Delta 4.2 và Native Execution Engine improvements. Các default liên quan hiệu năng thay đổi so với 1.3 (xem chương **⚡ CẬP NHẬT 05/11/2026** cuối file).
 
 Delta 4.2-specific experimental features chỉ Spark; nếu same Delta tables được nhiều Fabric workloads dùng, kiểm tra table-format interoperability.
 
@@ -834,7 +836,7 @@ GUARDRAIL     Giới hạn theo SKU về số parquet file / row group / số d�
 | **High concurrency** | Nhiều notebook cùng một user, cấu hình tương thích → dùng lại session | Không chia sẻ giữa hai user; không đi cùng Autotune |
 | **Native Execution Engine (NEE)** | Tăng tốc vectorized (Velox/Gluten, C++) | Bật ở cấp **Environment** (Spark compute → Acceleration) |
 
-> ⚠️ **Autotune** là **Preview, tắt mặc định**, và theo tài liệu hiện hành chỉ tương thích **Runtime 1.2**; không chạy khi bật high concurrency. Đáp án "bật Autotune cho production Runtime mới nhất" là bẫy.
+> ⚠️ **Autotune** là **Preview, tắt mặc định**, và chỉ tương thích **Runtime 1.2** (đã hết hỗ trợ; không bật được trên 1.3/2.0); không chạy khi bật high concurrency. Đáp án "bật Autotune cho production Runtime mới nhất" là bẫy.
 
 **Nhận diện skew và spill trên Spark UI — đọc đúng chỗ:**
 
@@ -945,3 +947,67 @@ Vì nó không sửa nguyên nhân khi vấn đề là skew, small files, statis
 7. **Capacity:** mở Capacity Metrics App, tìm timepoint tiêu thụ cao nhất trong 14 ngày, xác định operation nào gây ra, phân loại interactive hay background.
 
 **Ngưỡng đạt:** che cột cuối của bảng mục B và tự nói đúng biện pháp cho ≥13/15 triệu chứng; trả lời đúng ≥13/14 câu ở mục H.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — OPTIMIZE PERFORMANCE
+
+## U1. Sáu bullet chính thức — không đổi
+
+Lakehouse table · pipeline · data warehouse · eventstreams & eventhouses · Spark performance · query performance.
+
+## U2. Runtime 2.0 (GA, mặc định) — default ảnh hưởng tới tối ưu
+
+| Cấu hình | Runtime 1.3 | **Runtime 2.0** | Hệ quả khi tối ưu |
+|---|---|---|---|
+| `spark.databricks.delta.optimizeWrite.enabled` | `true` | **không set** | Không mặc định có optimize write → theo dõi small files sau write/MERGE |
+| `spark.databricks.delta.optimizeWrite.partitioned.enabled` | `false` | **`true`** | Bảng có partition được gộp file khi ghi |
+| `spark.microsoft.delta.targetFileSize.adaptive.enabled` | `false` | **`true`** | Kích thước file đích tự điều chỉnh theo bảng |
+| `spark.microsoft.delta.optimize.fast.enabled` | `false` | **`true`** | OPTIMIZE bỏ qua phần đã tối ưu, nhanh hơn |
+| `spark.microsoft.delta.optimize.fileLevelTarget.enabled` | `false` | **`true`** | OPTIMIZE nhắm theo file |
+| `spark.sql.files.maxPartitionBytes` | 128 MiB | **512 MiB** | Ít read partition hơn → nếu thiếu song song, giảm giá trị này |
+| `spark.hadoop.parquet.block.size` | 1 GiB | **128 MiB** | Row group nhỏ hơn |
+| `spark.databricks.delta.properties.defaults.enableDeletionVectors` | — | **`true`** | DELETE/UPDATE/MERGE nhanh hơn; cần OPTIMIZE định kỳ |
+| `spark.sql.sources.v2.bucketing.enabled` | `false` | **`true`** | Storage-partitioned join có thể tránh shuffle |
+| `spark.speculation.multiplier` / `quantile` | 1.5 / 0.75 | **3 / 0.9** | Speculative task ít kích hoạt hơn |
+| `spark.sql.parquet.vorder.default` | `false` ở workspace mới | `false` ở workspace mới | V-Order vẫn phải **bật có chủ đích** cho bảng read-heavy |
+| Spark Autotune | Không hỗ trợ | **Không hỗ trợ** | Chỉ Runtime 1.2 |
+
+> Không học thuộc mọi con số. Ba điều phải nhớ: **(1)** Runtime 2.0 là đáp án mặc định cho Spark mới; **(2)** Autotune không phải đáp án; **(3)** feature Delta 4.2 chỉ an toàn khi chỉ Spark đọc bảng.
+
+## U3. Tối ưu ở cấp capacity — workspace-level surge protection (Preview)
+
+Khi triệu chứng là "**một** workspace (sandbox, dev) ăn hết CU làm các workspace khác bị throttling", đáp án mới là **workspace-level surge protection**: đặt ngưỡng % CU trong 24h trượt, workspace quan trọng đặt **Mission critical**. Khi triệu chứng là "background job dồn dập làm interactive chậm", đáp án vẫn là **capacity-level surge protection** (rejection/recovery threshold) hoặc dời lịch/scale SKU.
+
+## U4. Warehouse — `QUALIFY` (Preview) giúp gọn truy vấn dedup/top-N
+
+```sql
+-- Top 3 sản phẩm doanh thu cao nhất mỗi danh mục, không cần CTE
+SELECT CategoryKey, ProductKey, Revenue
+FROM gold.ProductRevenue
+QUALIFY ROW_NUMBER() OVER (PARTITION BY CategoryKey ORDER BY Revenue DESC) <= 3;
+```
+
+Đây là cải thiện **cú pháp**, không phải kỹ thuật tối ưu hiệu năng tự thân. Tối ưu Warehouse vẫn theo: **Query Insights → query plan → statistics → data clustering (Preview) → tránh `SELECT *`/cột rộng**.
+
+## U5. Câu hỏi tình huống cập nhật
+
+<details><summary><b>OP-U1.</b> Sau khi chuyển sang Runtime 2.0, job đọc bảng lớn tạo ít task hơn trước và cluster không dùng hết core. Cấu hình nào cần xem trước?</summary>
+
+`spark.sql.files.maxPartitionBytes` — mặc định tăng từ 128 MiB lên **512 MiB** trên Runtime 2.0, nên số read partition giảm. Giảm giá trị (ví dụ 128m) cho job cần song song cao, rồi benchmark.
+</details>
+
+<details><summary><b>OP-U2.</b> Bảng Delta nhận MERGE mỗi giờ trên Runtime 2.0; số file nhỏ tăng dần. Hai việc nên làm?</summary>
+
+(1) Lên lịch **OPTIMIZE** (fast optimize đã bật mặc định nên chi phí thấp hơn) — có thể dùng Lakehouse maintenance hoặc notebook; (2) cân nhắc bật **optimize write** cho bảng/phiên ghi (Runtime 2.0 không còn set mặc định) hoặc liquid clustering nếu filter thay đổi. **Không** dùng Autotune.
+</details>
+
+<details><summary><b>OP-U3.</b> Bảng Warehouse `FactSales` 2 tỷ dòng, dashboard lọc theo `OrderDate` và `CustomerKey`; bảng hiện không có clustering. Làm sao áp dụng data clustering?</summary>
+
+Không `ALTER` được. Tạo bảng mới bằng **CTAS** `WITH (CLUSTER BY (OrderDate, CustomerKey))`, chuyển dữ liệu, đổi tên. Chấp nhận ingestion chậm hơn và tốn CU hơn; tính năng còn Preview.
+</details>
+
+<details><summary><b>OP-U4.</b> Ba workspace dùng chung F64. Workspace "sandbox" chạy notebook thử nghiệm làm report production bị trễ mỗi chiều. Biện pháp ít tác động nhất tới các workspace khác?</summary>
+
+**Workspace-level surge protection (Preview)** với ngưỡng % CU hợp lý cho sandbox, workspace production đặt **Mission critical**. Nếu đề chỉ chấp nhận GA: tách sandbox sang capacity nhỏ riêng hoặc dùng capacity-level surge protection.
+</details>

@@ -3,9 +3,9 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
-> **Skills measured as of July 21, 2026**  
+> **Đối chiếu Study Guide DP-700 — trang cập nhật 30/10/2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
 > Tham chiếu: [Microsoft Learn — Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 
@@ -80,6 +80,8 @@ Bạn cần xử lý loại dữ liệu nào?
 
 ## 2. Choose Between Dataflows Gen2, Notebooks, KQL, and T-SQL
 
+> **Cập nhật 05/11/2026:** study guide hiện ghi bullet là **"Choose between dataflows, notebooks, and T-SQL for data transformation"** (KQL không còn trong bullet chọn engine). KQL **vẫn** được hỏi ở bullet "Transform data by using PySpark, SQL, and KQL" và ở phần streaming, nên giữ nguyên mục 2.5.
+
 ### 2.1. Ma trận quyết định
 
 | Tiêu chí | **Dataflows Gen2** | **Notebooks (Spark)** | **T-SQL** | **KQL** |
@@ -138,6 +140,8 @@ Bạn cần xử lý loại dữ liệu nào?
 ---
 
 ## 3. Create and Manage OneLake Shortcuts
+
+> **Cập nhật 05/11/2026:** bullet hiện ghi **"Create and manage shortcuts to data"** — cùng nội dung.
 
 ### 3.1. Khái niệm
 Shortcut là object trong OneLake trỏ đến target path khác, giúp tránh edge copy/staging không cần thiết.
@@ -965,7 +969,7 @@ D. No compute costs are incurred for shortcut queries
 
 ---
 
-*Tài liệu được tổng hợp dựa trên Skills Measured as of July 21, 2026*  
+*Tài liệu được tổng hợp dựa trên Study Guide DP-700 (trang cập nhật 30/10/2026); bản trước dựa trên Skills Measured 21/07/2026*  
 *Nguồn tham khảo: Microsoft Learn, Microsoft Fabric Documentation*
 
 
@@ -1458,3 +1462,88 @@ Khi dữ liệu là **luồng sự kiện theo thời gian** (log, telemetry, Io
 6. Trong Warehouse, load một bảng bằng **CTAS**, rồi viết truy vấn `GROUP BY ... ROLLUP` và so sánh với `CUBE`.
 
 **Ngưỡng đạt:** đọc thuộc cây quyết định ở mục B, giải đúng bảng phản xạ mục C khi che cột "Chọn", và trả lời đúng ≥11/12 câu ở mục G.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — BATCH DATA
+
+## U1. Chín bullet chính thức hiện hành
+
+Choose an appropriate data store · **Choose between dataflows, notebooks, and T-SQL** · **Create and manage shortcuts to data** · Implement mirroring · Ingest data by using pipelines · Transform data by using PySpark, SQL, and KQL · Denormalize data · Group and aggregate data · Handle duplicate, missing, and late-arriving data.
+
+## U2. Dataflows vs Notebooks vs T-SQL — bảng chọn 30 giây
+
+| Tín hiệu | Chọn |
+|---|---|
+| Low-code, người dùng quen Power Query, nhiều connector, khối lượng vừa | **Dataflow Gen2** |
+| Dữ liệu lớn, logic phức tạp, Delta MERGE, ML, đọc file bán cấu trúc | **Notebook (PySpark/Spark SQL)** |
+| Dữ liệu đã nằm trong **Warehouse**, team giỏi SQL, cần transaction đa bảng, stored procedure | **T-SQL** (Warehouse) |
+| Đích là Warehouse nhưng nguồn là file lớn trong Lakehouse | Notebook ghi Delta → Warehouse đọc cross-database, hoặc `COPY INTO`/CTAS bằng T-SQL |
+| Dữ liệu sự kiện/telemetry trong Eventhouse | KQL (thuộc bullet "Transform by using … KQL") |
+
+## U3. Thay đổi 07–09/2026 liên quan batch (Preview trừ khi ghi khác)
+
+| Khu vực | Tính năng | Ý nghĩa ôn thi |
+|---|---|---|
+| Dataflow Gen2 | **Upgrade Wizard Gen1 → Gen2** | Nâng cấp tại chỗ, giữ ID, tên, schedule, connection |
+| Dataflow Gen2 | Dynamic destination expressions, dynamic warehouse schemas, shared queries, offset transformation, send email, partitioned compute, mapping data flow transforms | Dataflow Gen2 ngày càng gần ADF mapping data flow; đáp án GA cốt lõi vẫn là **staging + query folding + destination** |
+| Copy job | **Custom staging**, **workspace monitoring**, Snowflake read-only CDC (**GA 09/2026**) | Xem chi tiết ở file Loading Patterns |
+| Mirroring | Nguồn mới: **AWS Glue, Azure Monitor, Google Lakehouse Runtime Catalog, Dremio, Azure Database for MySQL**; **change feed streaming vào Eventstream** | Quyết định vẫn: **database/catalog cần replica gần real-time, không ETL → Mirroring** |
+| OneLake | **Delegated OneLake shortcuts**, OneLake table read API | Biết tên để loại đáp án |
+| Warehouse | **`QUALIFY`**, mở rộng grouping, analytical/statistical aggregate functions | `QUALIFY` lọc theo window function — gọn cho bài **dedup** |
+
+## U4. Dedup — ba cách viết phải gõ được từ trí nhớ
+
+```sql
+-- T-SQL (GA): giữ bản ghi mới nhất cho mỗi CustomerID
+WITH ranked AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY CustomerID ORDER BY ModifiedAt DESC) AS rn
+    FROM stg.Customer
+)
+SELECT * FROM ranked WHERE rn = 1;
+
+-- T-SQL với QUALIFY (Preview trong Warehouse) — cùng kết quả, không cần CTE
+SELECT *
+FROM stg.Customer
+QUALIFY ROW_NUMBER() OVER (PARTITION BY CustomerID ORDER BY ModifiedAt DESC) = 1;
+```
+
+```python
+# PySpark
+from pyspark.sql import Window, functions as F
+w = Window.partitionBy("CustomerID").orderBy(F.col("ModifiedAt").desc())
+latest = (spark.table("stg_customer")
+            .withColumn("rn", F.row_number().over(w))
+            .filter("rn = 1").drop("rn"))
+```
+
+```kusto
+// KQL
+StgCustomer
+| summarize arg_max(ModifiedAt, *) by CustomerID
+```
+
+## U5. Câu hỏi tình huống cập nhật
+
+<details><summary><b>BD-U1.</b> Có 120 Dataflow Gen1 cũ. Yêu cầu chuyển sang Gen2 mà vẫn giữ ID, schedule và connection để report không phải trỏ lại. Cách ít công sức nhất?</summary>
+
+**Upgrade Wizard Dataflow Gen1 → Gen2 (Preview)** — nâng cấp tại chỗ, giữ ID, tên, schedule, connection. Cách GA truyền thống ("Save as Gen2") tạo item mới, phải trỏ lại phụ thuộc.
+</details>
+
+<details><summary><b>BD-U2.</b> Một bảng staging trong Warehouse có bản ghi trùng theo `OrderID`. Team chỉ biết SQL. Viết lệnh tạo bảng sạch giữ bản mới nhất.</summary>
+
+```sql
+CREATE TABLE dbo.Orders_Clean AS
+SELECT OrderID, CustomerID, Amount, ModifiedAt
+FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY OrderID ORDER BY ModifiedAt DESC) AS rn
+    FROM stg.Orders
+) t
+WHERE rn = 1;
+```
+</details>
+
+<details><summary><b>BD-U3.</b> Nguồn là Azure Database for MySQL, yêu cầu bản sao gần real-time trong OneLake, không xây pipeline. Lựa chọn?</summary>
+
+**Mirroring** (Azure Database for MySQL là nguồn mirroring mới — Preview). Nếu đề chỉ chấp nhận GA, dùng **Copy job incremental** theo lịch.
+</details>

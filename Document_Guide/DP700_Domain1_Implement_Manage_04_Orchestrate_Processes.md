@@ -1,9 +1,9 @@
 # DP-700: Orchestrate Processes
 ## Implement and manage an analytics solution (30–35%)
-### Skills measured as of July 21, 2026
+### Đối chiếu Study Guide DP-700 (trang cập nhật 30/10/2026)
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
 
 > [!CAUTION]
@@ -55,6 +55,8 @@
 ---
 
 ## 2. CHOOSE BETWEEN DATAFLOW GEN2, PIPELINE, AND NOTEBOOK
+
+> **Cập nhật 05/11/2026:** study guide hiện ghi bullet là **"Choose between a pipeline and a notebook"** (bỏ Dataflow Gen2 khỏi bullet này). Ở D1, trọng tâm là: **pipeline = điều phối** (gọi nhiều bước, retry, branch, ForEach, schedule/trigger), **notebook = xử lý bằng code** (PySpark/Spark SQL, logic phức tạp, dữ liệu lớn). Dataflow Gen2 vẫn được hỏi ở D2 ("dataflows, notebooks, and T-SQL").
 
 ### 2.1 So sánh chi tiết
 
@@ -1246,3 +1248,54 @@ Mức **song song** của vòng lặp. Đặt quá cao gây tranh chấp tài ng
 6. Đặt **schedule** chạy mỗi giờ; sau đó thử tạo một **event trigger** khi file đến OneLake và so sánh hai cơ chế.
 
 **Ngưỡng đạt:** viết lại 5 biểu thức ở mục D từ trí nhớ và trả lời đúng ≥9/10 câu ở mục G.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — ORCHESTRATE PROCESSES
+
+## U1. Ba bullet chính thức hiện hành
+
+1. **Choose between a pipeline and a notebook** *(trước: Dataflow Gen2, pipeline, notebook)*
+2. Design and implement schedules and event-based triggers
+3. Implement orchestration patterns with notebooks and pipelines, including parameters and dynamic expressions
+
+## U2. Pipeline hay Notebook — bảng quyết định một trang
+
+| Tín hiệu trong đề | Chọn | Lý do |
+|---|---|---|
+| "Chạy A rồi B, nếu lỗi thì gửi email/Teams", "ForEach qua danh sách bảng", "retry, timeout" | **Pipeline** | Điều phối có sẵn activity điều khiển luồng, retry policy, monitoring theo activity |
+| "Copy 200 bảng từ nguồn có connector, không cần code" | **Pipeline** (Copy activity) hoặc **Copy job** | Connector + parallel copy, ít công sức |
+| "Logic biến đổi phức tạp, dữ liệu lớn, cần PySpark/Spark SQL, MERGE Delta, SCD2" | **Notebook** | Sức mạnh Spark, code tái sử dụng |
+| "Gọi nhiều notebook song song, chia sẻ session" | Notebook với `notebookutils.notebook.runMultiple` | DAG notebook trong một session |
+| "Cần cả hai" | **Pipeline gọi Notebook activity**, truyền tham số vào parameter cell, đọc `exitValue` | Mẫu phổ biến nhất trong case study |
+| "Event: file mới vào OneLake" | Pipeline + **event-based trigger** (OneLake/Storage events qua Activator) | Notebook không tự có trigger sự kiện |
+
+## U3. Activity/tính năng orchestration mới (Preview, 07–09/2026)
+
+| Tính năng | Khi nào nghĩ tới |
+|---|---|
+| **Pipeline-level dependencies** | Pipeline hạ nguồn chỉ chạy khi pipeline thượng nguồn đạt điều kiện cấu hình — thay cho việc nhồi tất cả vào một pipeline cha |
+| **Fabric Actions activity** | Gọi các Fabric REST operation được hỗ trợ với xác thực sẵn, không phải tự viết Web activity + token |
+| **Business Actions activity** | Gọi hệ thống/workflow nghiệp vụ được hỗ trợ từ pipeline |
+| **Refresh Materialized Lake View activity** | Refresh MLV như một bước trong pipeline |
+| **Copy job ↔ Eventstream** | Eventstream làm nguồn/đích của Copy job |
+
+> Các tính năng trên đều Preview → đáp án GA an toàn vẫn là: Invoke Pipeline / Execute Pipeline activity, Notebook activity, Web activity, Semantic model refresh activity, schedule và event trigger.
+
+## U4. Câu hỏi tình huống cập nhật
+
+<details><summary><b>OR-U1.</b> Mỗi đêm cần: copy 40 bảng từ Azure SQL vào Lakehouse, chạy notebook làm sạch, rồi refresh semantic model; lỗi bất kỳ bước nào phải gửi Teams. Chọn gì?</summary>
+
+**Pipeline** điều phối: Lookup danh sách bảng → **ForEach + Copy activity** → **Notebook activity** (truyền `run_date` qua parameter cell) → **Semantic model refresh activity**; nhánh **On fail** dẫn tới **Teams/Office 365 Outlook activity**. Lịch: **schedule** hằng đêm.
+</details>
+
+<details><summary><b>OR-U2.</b> Một notebook cần trả về số dòng đã xử lý cho pipeline để quyết định có refresh model hay không. Viết gì ở notebook và expression nào ở pipeline?</summary>
+
+Notebook: `notebookutils.notebook.exit(str(row_count))`.
+Pipeline (If Condition): `@greater(int(activity('NB_Clean').output.result.exitValue), 0)`.
+</details>
+
+<details><summary><b>OR-U3.</b> Pipeline `PL_Gold` chỉ được chạy khi `PL_Silver` thành công, nhưng hai pipeline do hai team quản lý riêng, không muốn gộp vào pipeline cha. Lựa chọn GA và lựa chọn Preview?</summary>
+
+GA: `PL_Silver` gọi `PL_Gold` bằng **Invoke Pipeline activity** ở nhánh On success (hoặc một pipeline cha gọi cả hai). Preview: **Pipeline-level dependencies** khai báo phụ thuộc trực tiếp giữa hai pipeline.
+</details>

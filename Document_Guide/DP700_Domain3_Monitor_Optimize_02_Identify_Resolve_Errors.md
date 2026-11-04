@@ -3,9 +3,9 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
-> **Skills measured as of July 21, 2026**  
+> **Đối chiếu Study Guide DP-700 — trang cập nhật 30/10/2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
 > Tham chiếu: [Microsoft Learn — Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 
@@ -408,6 +408,8 @@ Current Warehouse guidance dùng **SHOWPLAN_XML trong SSMS** cho execution plan,
 
 ## 7. Identify and Resolve OneLake Shortcut Errors
 
+> **Cập nhật 05/11/2026:** không còn bullet riêng trong study guide hiện hành — **related topic**, nhưng lỗi shortcut (401/403, path, connection) vẫn hay lồng vào câu hỏi lỗi pipeline/notebook.
+
 ### 7.1. Checklist
 
 ```text
@@ -548,7 +550,7 @@ from pyspark.sql import functions as F
 
 # 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
 
-> **Vì sao có chương này:** *Identify and resolve errors* có tới **7 objective** trải khắp pipeline, Dataflow Gen2, notebook, Eventhouse, Eventstream, T-SQL và shortcut. Điều đề thật sự kiểm tra không phải là bạn thuộc mã lỗi, mà là bạn có **quy trình chẩn đoán** hay không: mở đúng nơi, đọc đúng thứ, sửa đúng nguyên nhân. Chương này viết lại theo dạng **playbook**.
+> **Vì sao có chương này:** *Identify and resolve errors* có **6 bullet trong study guide hiện hành** (pipeline, dataflow, notebook, Eventhouse, Eventstream, T-SQL); shortcut errors là related topic. Điều đề thật sự kiểm tra không phải là bạn thuộc mã lỗi, mà là bạn có **quy trình chẩn đoán** hay không: mở đúng nơi, đọc đúng thứ, sửa đúng nguyên nhân. Chương này viết lại theo dạng **playbook**.
 > Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
 
 ## A. QUY TRÌNH CHẨN ĐOÁN CHUNG — DÙNG ĐƯỢC CHO MỌI LOẠI LỖI
@@ -754,3 +756,51 @@ Kiểm tra **T-SQL surface area** của Fabric Warehouse — nhiều tính năng
 7. Chạy `INSERT` hai lần vào một bảng để tạo dòng trùng; sau đó thay bằng `MERGE` idempotent và chạy ba lần → xác nhận số dòng không đổi.
 
 **Ngưỡng đạt:** đọc quy trình 5 bước ở mục A từ trí nhớ, và trả lời đúng ≥11/12 câu ở mục I.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — IDENTIFY AND RESOLVE ERRORS
+
+## U1. Sáu bullet chính thức hiện hành
+
+Pipeline errors · **Dataflow** errors · Notebook errors · Eventhouse errors · Eventstream errors · T-SQL errors. *(Shortcut errors: related topic.)*
+
+## U2. Lỗi notebook sau khi chuyển Runtime 1.3 → 2.0 (Runtime 2.0 là GA, mặc định từ 10/2026)
+
+| Triệu chứng | Nguyên nhân | Cách sửa |
+|---|---|---|
+| `ModuleNotFoundError` cho `xlsxwriter`, `networkx`, `dask`, `shap`… | Runtime 2.0 **gỡ 348 package Conda + 24 package pip** khỏi image mặc định | Thêm vào **Environment** (pin version) và publish; không rải `%pip install` trong job production |
+| Cài package lỗi build | Package có native extension chưa có **wheel Python 3.13 Linux** | Chọn version có wheel 3.13 hoặc thay package |
+| `NoSuchMethodError` / `ClassNotFoundException` trong SJD | JAR build cho **Scala 2.12 / Java 11** | **Build lại** cho Scala 2.13 / Java 21; `javax` → `jakarta` với servlet API |
+| `Failed to find data source: eventhubs` | `EventHubConnector` **đã bị gỡ** | Dùng `format("kafka")` với Event Hubs Kafka endpoint, đọc cột `value` |
+| Streaming không restart được từ checkpoint cũ | Checkpoint không tương thích sau nâng cấp/đổi source | Restart có kiểm soát với **checkpoint mới**; sink **idempotent** |
+| Lỗi pandas: `iteritems`, `append` không tồn tại | API bị gỡ trong pandas mới | `items()`, `ps.concat(...)` |
+| Kết quả cast/ngày giờ khác trước | Thay đổi hành vi Spark 4.1 (dù Fabric đặt `spark.sql.ansi.enabled=false`) | Sửa code; **không** giữ cấu hình legacy làm giải pháp lâu dài |
+| SQL endpoint / Power BI không đọc được table | Đã bật **feature Delta 4.2** hoặc nâng protocol | Không bật feature experimental trên table dùng chung; nâng protocol **không đảo ngược** → phải tạo lại table |
+| Bật `spark.ms.autotune.enabled` không có tác dụng | Autotune **chỉ Runtime 1.2** | Tune thủ công / AQE |
+
+## U3. Eventhouse & Eventstream — nguồn chẩn đoán mới (Preview, 09/2026)
+
+- **Eventhouse workspace-monitoring logs**: sự kiện **throttling**, **suboptimal size**, **scale-out** → khi query/ingest chậm theo đợt, kiểm tra đây trước khi đổi Capacity Planner (tên mới của Always-On/minimum consumption).
+- **Eventstream processing logs**: warning, failure, recovery của tầng xử lý (Stream Analytics) → khi node transform không ra dữ liệu, xem log trước khi xóa/tạo lại topology.
+
+## U4. Copy job — lỗi "mất DELETE"
+
+Copy job trộn bảng **bật CDC** và **không bật CDC** → **tất cả** chuyển sang watermark-based incremental → hard DELETE ở nguồn không còn được phản ánh. Sửa: bật CDC cho mọi bảng hoặc tách job. Chỉ default capture instance và net changes được hỗ trợ (trang CDC 10/09/2026).
+
+## U5. Câu hỏi tình huống cập nhật
+
+<details><summary><b>ER-U1.</b> Notebook production chạy ổn nhiều tháng, sau khi admin đổi runtime mặc định của workspace thì lỗi `ModuleNotFoundError: No module named 'xlsxwriter'`. Sửa đúng nhất?</summary>
+
+Thêm `xlsxwriter` (pin version) vào **Environment** gắn với notebook rồi publish. Nguyên nhân: Runtime 2.0 đã gỡ package khỏi image mặc định. `%pip install` inline trong notebook chạy từ pipeline là giải pháp tạm, không phải best practice.
+</details>
+
+<details><summary><b>ER-U2.</b> Sau khi bật một feature Delta 4.2 trên bảng `gold.sales`, SQL analytics endpoint không còn đọc được bảng. Có tắt feature để quay lại không?</summary>
+
+Thường **không**: nâng protocol Delta **không đảo ngược được**. Phải tạo lại bảng (CTAS/rewrite) ở protocol cũ. Bài học: chỉ bật feature Delta 4.x trên table chỉ Spark đọc.
+</details>
+
+<details><summary><b>ER-U3.</b> Truy vấn KQL dashboard chậm theo đợt vào giờ cao điểm. Nguồn chẩn đoán nào cho thấy Eventhouse đang bị throttling hay scale-out?</summary>
+
+**Workspace monitoring** với **Eventhouse workspace-monitoring logs** (Preview) — có sự kiện throttling/scale-out. Sau đó mới quyết định chỉnh **Capacity Planner**, hot cache hoặc tối ưu query.
+</details>

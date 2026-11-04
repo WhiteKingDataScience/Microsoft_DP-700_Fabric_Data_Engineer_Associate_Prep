@@ -3,9 +3,9 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
-> **Skills measured as of July 21, 2026**  
+> **Đối chiếu Study Guide DP-700 — trang cập nhật 30/10/2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
 > Tham chiếu: [Microsoft Learn — Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 
@@ -177,7 +177,7 @@ CDC phù hợp khi cần INSERT + UPDATE + DELETE và source/connector hỗ tr�
 - **Merge / SCD Type 1**: target giữ current state; source delete có thể xóa target row.
 - **SCD Type 2 (Preview)**: update tạo version mới; delete expire/soft-delete current version.
 
-Support matrix thay đổi nhanh. Tính đến 08/2026 Microsoft tài liệu hóa CDC cho các nguồn như Azure SQL DB, Azure SQL MI, Fabric Warehouse, Fabric Lakehouse table (Preview), Google BigQuery (Preview), SQL Server on-prem, Oracle (Preview), SAP Datasphere outbound; Snowflake có tutorial CDC riêng.
+Support matrix thay đổi nhanh (xem chương **⚡ CẬP NHẬT 05/11/2026** cuối file cho bảng đối chiếu 09/2026). Tính đến 08/2026 Microsoft tài liệu hóa CDC cho các nguồn như Azure SQL DB, Azure SQL MI, Fabric Warehouse, Fabric Lakehouse table (Preview), Google BigQuery (Preview), SQL Server on-prem, Oracle (Preview), SAP Datasphere outbound; Snowflake có tutorial CDC riêng.
 
 #### D. MERGE / Upsert
 
@@ -720,7 +720,7 @@ D. Dataflow Gen2 with incremental refresh
 
 ---
 
-*Tài liệu được tổng hợp dựa trên Skills Measured as of July 21, 2026*  
+*Tài liệu được tổng hợp dựa trên Study Guide DP-700 (trang cập nhật 30/10/2026); bản trước dựa trên Skills Measured 21/07/2026*  
 *Nguồn tham khảo: Microsoft Learn, Microsoft Fabric Documentation*
 
 
@@ -1283,3 +1283,93 @@ Streaming cần **checkpoint** (mỗi query một checkpoint riêng), **watermar
 8. **Test idempotency:** chạy lại toàn bộ notebook lần thứ ba mà không đổi dữ liệu nguồn → số dòng ở đích **phải không đổi**. Nếu đổi, quay lại tìm điều kiện nào trong bốn điều kiện ở mục D bị thiếu.
 
 **Ngưỡng đạt:** gõ lại được đoạn MERGE idempotent và hai bước SCD2 **không nhìn tài liệu**, và trả lời đúng ≥13/14 câu ở mục J.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — LOADING PATTERNS
+
+## U1. Ba bullet chính thức — không đổi
+
+Full & incremental loads · Prepare data for a dimensional model · Loading pattern for streaming data.
+
+## U2. Copy job CDC & SCD Type 2 — đối chiếu Learn (trang cập nhật 10/09/2026)
+
+| Điểm | Nội dung |
+|---|---|
+| Cột SCD2 thêm vào đích | **`Valid_From`**, **`Valid_To`** (NULL với bản ghi đang hiệu lực), **`Is_Current`** |
+| Trạng thái | **SCD Type 2: Preview**. Merge (SCD Type 1) là **mặc định** của CDC trong Copy job |
+| Connector ghi SCD2 | Azure SQL DB, Azure SQL MI, SQL Server on-prem, SQL database in Fabric, Fabric Warehouse, Fabric Lakehouse table, Google BigQuery, Snowflake, Synapse DW. **Không**: SAP Datasphere Outbound. **Oracle: chưa hỗ trợ SCD2** khi CDC từ Oracle |
+| Bật SCD2 | Chọn SCD Type 2 làm **write method** — lịch sử version và **soft delete** bật cùng lúc, áp cho mọi bảng đã chọn |
+| Phát hiện CDC | Copy job **tự phát hiện** bảng nguồn đã bật CDC; chỉ hỗ trợ **net changes** |
+| **Bẫy trộn bảng** | Nếu một Copy job có cả bảng **bật CDC** và **không bật CDC** → **tất cả** bị xử lý như **watermark-based incremental** (mất khả năng bắt DELETE) |
+| Lakehouse làm nguồn | Copy job **không tự phát hiện** CDF đã bật trên Lakehouse table |
+| Mới GA 09/2026 | **Custom Copy job staging** (chọn database/schema staging cho CDC và SCD2), **Copy job workspace monitoring**, **Snowflake read-only CDC**, cải thiện initial load Oracle CDC. What's new cũng công bố GA **SQL CDC custom capture names**, trong khi trang CDC (10/09/2026) vẫn ghi chỉ default capture instance — đề khó hỏi chi tiết này |
+
+```sql
+-- Nguồn SQL Server / Azure SQL: bật CDC ở database và từng bảng (kiến thức SQL chuẩn)
+EXEC sys.sp_cdc_enable_db;
+EXEC sys.sp_cdc_enable_table
+     @source_schema = N'dbo',
+     @source_name   = N'Customer',
+     @role_name     = NULL;
+```
+
+## U3. Runtime 2.0 ảnh hưởng tới MERGE/SCD2 viết tay
+
+- **Deletion vectors bật mặc định** cho table mới trên Runtime 2.0 → `UPDATE`/`DELETE`/`MERGE` (bước expire version cũ của SCD2) ghi nhanh hơn vì chỉ đánh dấu dòng; chạy **OPTIMIZE** định kỳ để gộp lại.
+- `spark.databricks.delta.optimizeWrite.enabled` **không còn set mặc định** (Runtime 1.3: true), nhưng adaptive target file size + fast optimize bật → vẫn theo dõi số file sau mỗi lần MERGE.
+- Logic idempotent ở mục 6 **không đổi**: dedup source theo business key trước MERGE, điều kiện cập nhật theo thời gian/sequence.
+
+## U4. Streaming loading pattern — sửa code Event Hubs cho Runtime 2.0
+
+`EventHubConnector` đã bị gỡ khỏi Runtime 2.0. Mẫu đúng là đọc Event Hubs qua **Kafka endpoint**:
+
+```python
+from pyspark.sql import functions as F
+
+eh_namespace = "contoso-eh"            # <namespace>.servicebus.windows.net
+eh_name      = "telemetry"             # Event Hub = Kafka topic
+conn_str     = notebookutils.credentials.getSecret("https://contoso-kv.vault.azure.net/", "eh-conn")
+
+raw = (spark.readStream.format("kafka")
+       .option("kafka.bootstrap.servers", f"{eh_namespace}.servicebus.windows.net:9093")
+       .option("subscribe", eh_name)
+       .option("kafka.security.protocol", "SASL_SSL")
+       .option("kafka.sasl.mechanism", "PLAIN")
+       .option("kafka.sasl.jaas.config",
+               'org.apache.kafka.common.security.plain.PlainLoginModule required '
+               f'username="$ConnectionString" password="{conn_str}";')
+       .option("startingOffsets", "latest")
+       .load())
+
+events = (raw.select(F.from_json(F.col("value").cast("string"), schema).alias("e"))   # payload ở cột value
+             .select("e.*"))
+
+(events.writeStream.format("delta").outputMode("append")
+       .option("checkpointLocation", "Files/checkpoints/telemetry_kafka")
+       .toTable("bronze_telemetry"))
+```
+
+> Checkpoint của query `eventhubs` cũ **không dùng lại được** cho source Kafka mới → dùng checkpoint mới; để không mất/không trùng dữ liệu khi chuyển, đặt `startingOffsets` phù hợp và giữ sink **idempotent**.
+
+## U5. Câu hỏi tình huống cập nhật
+
+<details><summary><b>LP-U1.</b> Copy job đang CDC 10 bảng từ Azure SQL. Team thêm 2 bảng chưa bật CDC vào cùng job. Sau đó các lệnh DELETE ở nguồn không còn phản ánh sang đích. Vì sao?</summary>
+
+Job trộn bảng CDC và non-CDC nên **toàn bộ** chuyển sang **watermark-based incremental**, vốn không bắt được hard DELETE. Sửa: bật CDC cho 2 bảng mới (hoặc tách chúng sang Copy job khác).
+</details>
+
+<details><summary><b>LP-U2.</b> Yêu cầu: giữ lịch sử thay đổi khách hàng từ Azure SQL DB vào Fabric Warehouse, ít công sức nhất, không viết code. Chọn gì, và bảng đích có cột nào?</summary>
+
+**Copy job + CDC + write method SCD Type 2 (Preview)**. Bảng đích có thêm `Valid_From`, `Valid_To`, `Is_Current`; bản ghi bị xóa ở nguồn được soft delete (đặt `Valid_To`, `Is_Current = false`).
+</details>
+
+<details><summary><b>LP-U3.</b> Cùng yêu cầu như LP-U2 nhưng nguồn là Oracle. Thay đổi gì?</summary>
+
+Copy job CDC (Merge) đưa thay đổi vào **staging**, rồi tự hiện thực SCD2 bằng **Delta MERGE trong notebook** (Lakehouse) hoặc **T-SQL** trong Warehouse — vì SCD2 của Copy job chưa hỗ trợ CDC từ Oracle.
+</details>
+
+<details><summary><b>LP-U4.</b> Notebook streaming dùng `format("eventhubs")` báo lỗi không tìm thấy data source sau khi workspace chuyển Runtime 2.0. Bước sửa đúng?</summary>
+
+Chuyển sang `format("kafka")` với endpoint `<namespace>.servicebus.windows.net:9093`, `SASL_SSL`/`PLAIN`, parse cột `value`, dùng **checkpoint mới**, đảm bảo sink idempotent. Không phải lỗi quyền, không phải do capacity.
+</details>

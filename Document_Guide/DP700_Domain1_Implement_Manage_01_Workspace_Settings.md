@@ -1,9 +1,9 @@
 # DP-700: Configure Microsoft Fabric Workspace Settings
 ## Implement and manage an analytics solution (30–35%)
-### Skills measured as of July 21, 2026
+### Đối chiếu Study Guide DP-700 (trang cập nhật 30/10/2026)
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
 
 > [!CAUTION]
@@ -20,7 +20,7 @@
 2. [Configure Spark Workspace Settings](#2-configure-spark-workspace-settings)
 3. [Configure Domain Workspace Settings](#3-configure-domain-workspace-settings)
 4. [Configure OneLake Workspace Settings](#4-configure-onelake-workspace-settings)
-5. [Configure Apache Airflow Workspace Settings](#5-configure-apache-airflow-workspace-settings)
+5. [Configure Data Workflow (Apache Airflow Job) Workspace Settings](#5-configure-data-workflow-apache-airflow-job-workspace-settings)
 6. [Câu hỏi mô phỏng bài thi (Practice Questions)](#6-câu-hỏi-mô-phỏng-bài-thi)
 
 ---
@@ -98,11 +98,11 @@ Ví dụ cấu hình Custom Pool:
 
 | Thông số | Mô tả |
 |----------|--------|
-| **Runtime 1.3** | Runtime GA phổ biến cho workload cần tính tương thích đa trải nghiệm |
-| **Runtime 2.0** | Spark 4.1, Delta Lake 4.2, Python 3.13 (**Public Preview**, cập nhật 07/2026) |
+| **Runtime 2.0** | **GA, mặc định** cho workspace và Environment mới (cập nhật 10/2026). Spark 4.1, Delta Lake 4.2, Python 3.13, Java 21, Scala 2.13 — Microsoft khuyến nghị cho production |
+| **Runtime 1.3** | **EOSA** (đã công bố hết hỗ trợ). Spark 3.5.5, Delta 3.2, Python 3.11 — chỉ giữ cho workload chưa migrate |
 | **Default Runtime** | Workspace admin chọn runtime mặc định cho toàn workspace |
 
-> 💡 **Mẹo thi:** Runtime 2.0 (Preview) cung cấp hiệu suất tốt hơn và tương thích Delta Lake mới nhất, nhưng câu hỏi thi thường tập trung vào features GA.
+> 💡 **Mẹo thi:** Runtime 2.0 nay là GA và mặc định. Đổi runtime ở `Workspace settings > Data Engineering/Science > Spark settings > Environment` hoặc trong Environment item; có hiệu lực từ **session Spark kế tiếp**. Environment item ghi đè default của workspace cho notebook/SJD gắn vào nó. Trước khi chuyển workload cũ: kiểm tra thư viện Python 3.13, JAR Scala 2.13 (phải build lại), connector Event Hubs (đã bị gỡ → Kafka endpoint).
 
 ### 2.4 Environment và Libraries
 
@@ -271,11 +271,11 @@ Ngoài ra, OneLake tenant settings hiện còn có các tùy chọn về **OneLa
 
 > 💡 **Mẹo thi:** Nếu đáp án nói “enable external app access trong Workspace settings > OneLake”, hãy cảnh giác. External-app access là tenant setting; lifecycle/diagnostics/default tier mới là các cấu hình workspace OneLake hiện hành.
 
-## 5. CONFIGURE APACHE AIRFLOW WORKSPACE SETTINGS
+## 5. CONFIGURE DATA WORKFLOW (APACHE AIRFLOW JOB) WORKSPACE SETTINGS
 
 ### 5.1 Apache Airflow Job trong Fabric là gì?
 
-Fabric cung cấp **Apache Airflow Job** để chạy DAG (Directed Acyclic Graph) mà không phải tự dựng Airflow infrastructure. Blueprint DP-700 hiện yêu cầu biết **configure Apache Airflow workspace settings**.
+Fabric cung cấp **Apache Airflow Job** để chạy DAG (Directed Acyclic Graph) mà không phải tự dựng Airflow infrastructure. Study guide hiện ghi bullet này là **configure data workflow workspace settings** — "data workflow" là tên cũ của Apache Airflow job, và UI vẫn hiện *Default Data Workflow Setting*. Bản 21/07/2026 ghi **configure Apache Airflow workspace settings**.
 
 **Đường dẫn chính:** `Workspace settings > Data Factory > Apache Airflow Runtime Settings`
 
@@ -541,8 +541,8 @@ D. OneLake default tier
 
 ### 7.1 Spark Runtime hiện hành
 
-- **Runtime 1.3 (GA):** Spark 3.5.5, Python 3.11, Delta Lake 3.2; Microsoft hiện khuyến nghị dùng GA runtime cho production khi cần độ ổn định/tương thích.
-- **Runtime 2.0 (Public Preview):** Spark 4.1, Python 3.13, Delta Lake 4.2. Tính năng Preview có thể xuất hiện trong đề nếu phổ biến, nhưng production decision phải kiểm tra interoperability.
+- **Runtime 2.0 (GA, mặc định từ 10/2026):** Spark 4.1, Python 3.13, Delta Lake 4.2, Java 21, Scala 2.13. Microsoft khuyến nghị cho production; chỉ các feature Delta 4.x-specific là experimental và chỉ chạy trong Spark.
+- **Runtime 1.3 (EOSA):** Spark 3.5.5, Python 3.11, Delta Lake 3.2. Lên kế hoạch migrate theo [Migration guide](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0-migration-guide).
 
 ### 7.2 Jobs settings — phần dễ bị bỏ sót
 
@@ -555,7 +555,7 @@ Workspace Admin có thể cấu hình **Optimistic Job Admission**, **Reserve ma
 
 - Starter pool nhanh nhờ pre-warmed capacity nhưng không bảo đảm mọi session đều khởi động trong đúng 5 giây.
 - High concurrency không có nghĩa nhiều người dùng chia sẻ một session; session sharing bị giới hạn theo user và các notebook phải tương thích.
-- Runtime mới nhất không tự động là lựa chọn tốt nhất. Runtime 2.0 vẫn Preview và Delta 4.x features có thể không interoperable với mọi Fabric workload.
+- Runtime 2.0 là GA và mặc định, nhưng **Delta 4.x features** vẫn experimental và có thể không interoperable với SQL endpoint/Warehouse/Power BI; nâng protocol Delta **không đảo ngược được**.
 - Chọn pool dựa trên SLA khởi động, concurrency, libraries, runtime và resource profile; không chọn chỉ dựa trên “2 TB/ngày”.
 
 ### 7.4 Lab nhanh
@@ -739,7 +739,7 @@ Ba câu chốt phải thuộc:
 | Quyết định | Hai lựa chọn | Chọn khi nào |
 |---|---|---|
 | **Pool** | Starter pool ↔ Custom pool | Starter: dev/test, cần bắt đầu ngay, không cần tuỳ chỉnh. Custom: production, cần node size/autoscale riêng — đổi lại mất thời gian khởi động |
-| **Runtime** | GA (1.3) ↔ Preview (2.0) | Nhiều engine cùng đọc dữ liệu / cần ổn định → GA. Cần Spark 4.x, Delta mới, liquid clustering incremental → Runtime 2.0 (Preview) |
+| **Runtime** | 2.0 (GA, mặc định) ↔ 1.3 (EOSA) | Workload mới/production → **2.0**. Workload cũ phụ thuộc JAR Scala 2.12, package bị gỡ, `eventhubs` connector → giữ 1.3 tạm thời rồi migrate. Table dùng chung nhiều engine → không bật feature Delta 4.2 experimental |
 | **Environment** | Không dùng ↔ Environment mặc định của workspace | Cần cùng bộ thư viện + Spark properties cho mọi notebook → tạo Environment và đặt làm default |
 | **High concurrency** | Tắt ↔ Bật | Bật khi nhiều notebook **cùng một user** có cấu hình tương thích chạy nối tiếp/song song → giảm thời gian khởi động session |
 
@@ -748,7 +748,7 @@ Ba câu chốt phải thuộc:
 1. "Notebook mất 3 phút mới bắt đầu chạy mỗi lần" → đang dùng **custom pool**; muốn nhanh cho dev thì dùng starter pool (hoặc custom live pool nếu môi trường hỗ trợ).
 2. "Cần cùng thư viện Python cho cả team" → **Environment**, không phải `%pip install` trong từng notebook (`%pip install` chỉ có hiệu lực cho session hiện tại).
 3. "High concurrency để nhiều người dùng chung session" → **sai**, session chỉ chia sẻ trong phạm vi cùng một user.
-4. "Bật Autotune cho production Runtime 2.0" → **sai**, Autotune còn Preview, tắt mặc định, và theo tài liệu hiện hành giới hạn ở Runtime 1.2.
+4. "Bật Autotune cho production Runtime 2.0" → **sai**, Autotune (query tuning) còn Preview, tắt mặc định, và chỉ tương thích Runtime 1.2 (đã hết hỗ trợ) — không bật được trên 1.3/2.0.
 
 ## D. ONELAKE WORKSPACE SETTINGS — HIỂU BẰNG CHI PHÍ
 
@@ -860,3 +860,70 @@ ReadData = đọc qua SQL analytics endpoint. ReadAll = đọc trực tiếp fil
 6. Vào Admin portal, tìm một tenant setting liên quan OneLake; viết ra một câu phân biệt nó với setting workspace vừa xem.
 
 **Ngưỡng đạt:** viết lại được ma trận role ở mục B trên giấy trắng **không nhìn tài liệu**, và trả lời đúng ≥11/12 câu ở mục G.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — WORKSPACE SETTINGS
+
+## U1. Bốn bullet chính thức hiện hành
+
+| Bullet trong study guide (30/10/2026) | Học ở mục | Thay đổi so với 21/07/2026 |
+|---|---|---|
+| Configure Spark workspace settings | 2, 7 | Runtime 2.0 lên **GA và mặc định** |
+| Configure domain workspace settings | 3 | Không đổi |
+| Configure OneLake workspace settings | 4 | Không đổi |
+| Configure **data workflow** workspace settings | 5 | **Đổi tên bullet** (trước: Apache Airflow) — nội dung không đổi |
+
+## U2. Spark settings — những gì phải sửa trong đầu
+
+| Điểm | Đúng tại 11/2026 |
+|---|---|
+| Runtime mặc định | **Runtime 2.0** cho workspace/Environment mới; Runtime 1.3 = **EOSA** |
+| Đổi runtime | `Workspace settings > Data Engineering/Science > Spark settings > Environment`, hoặc trong Environment item; áp dụng từ session kế tiếp |
+| Thứ tự ưu tiên | Environment gắn vào notebook/SJD **ghi đè** default của workspace |
+| Thư viện | Runtime 2.0 **gỡ 348 package Conda + 24 package pip** khỏi default (ví dụ `dask`, `numba`, `networkx`, `xlsxwriter`, `pytorch`, `shap`) → thêm lại qua Environment/Library Manager và **pin version** |
+| JAR | Scala 2.12 ↔ 2.13 không tương thích nhị phân → **build lại JAR** |
+| ANSI | Spark 4.1 mặc định ANSI bật, nhưng Fabric 2.0 đặt `spark.sql.ansi.enabled=false` |
+| Custom live pools | **Preview** cho Runtime 2.0 — pool giữ ấm theo cấu hình riêng |
+| Delegated pool management | **Preview** — khi admin cho phép, Member cấu hình pool qua Environment |
+| Autotune | Chỉ Runtime 1.2 → **không dùng được** trên 1.3/2.0 |
+
+```python
+# Kiểm tra nhanh session đang chạy runtime nào và vài default quan trọng của 2.0
+print(spark.version)                                          # 4.1.x trên Runtime 2.0
+for k in ["spark.sql.ansi.enabled",
+          "spark.sql.files.maxPartitionBytes",
+          "spark.sql.parquet.vorder.default",
+          "spark.databricks.delta.properties.defaults.enableDeletionVectors"]:
+    print(k, "=", spark.conf.get(k, "<not set>"))
+```
+
+## U3. Data workflow (Apache Airflow job) — bổ sung số liệu
+
+- Phiên bản hiện hỗ trợ: **Apache Airflow 2.10.5**, **Python 3.12**. **Không đổi được phiên bản Airflow** của job đã tạo → muốn đổi phải tạo job mới.
+- Starter pool: node **Large**, khởi động tức thì, **tắt sau 20 phút** không hoạt động, cho dev.
+- Custom pool: khởi tạo ở trạng thái **stopped**, sau đó **always-on** đến khi pause thủ công; node **Small/Large**, **autoscale**, **extra nodes** (mỗi node thêm sức chứa cho 3 worker), cho production.
+- Nếu tắt *customize compute configurations for items*, mọi môi trường Airflow trong workspace **dùng Starter pool**.
+- Hạn chế: **không hỗ trợ private network/VNet**, không có diagnostic logs/metrics như Workflow Orchestration Manager của ADF, không hỗ trợ Blob Storage.
+
+## U4. Câu hỏi tình huống cập nhật
+
+<details><summary><b>WS-U1.</b> Study guide ghi "Configure data workflow workspace settings". Admin cần cho DAG production chạy với scheduler luôn sẵn sàng và nhiều DAG song song. Cấu hình gì?</summary>
+
+`Workspace settings > Data Factory > Apache Airflow Runtime Settings` → *Default Data Workflow Setting* → **New Pool (custom pool)**, node **Large**, bật **autoscale**, thêm **extra nodes** để tăng concurrency. Đảm bảo *customize compute configurations for items* đang bật nếu từng item cần pool riêng.
+</details>
+
+<details><summary><b>WS-U2.</b> Workspace mới tạo 11/2026. Team muốn mọi notebook dùng chung thư viện `xlsxwriter` đã pin version. Làm gì?</summary>
+
+Tạo **Environment** (Runtime 2.0), thêm `xlsxwriter==<version>` vào public libraries, publish, rồi đặt làm **default environment của workspace**. `xlsxwriter` không còn trong default image của Runtime 2.0, và `%pip install` chỉ có tác dụng trong session hiện tại.
+</details>
+
+<details><summary><b>WS-U3.</b> Một Spark job definition dùng JAR build cho Scala 2.12 bắt đầu lỗi `NoSuchMethodError` sau khi workspace chuyển sang Runtime 2.0. Cách xử lý đúng?</summary>
+
+**Build lại JAR cho Scala 2.13 / Java 21**, hoặc tạm gắn SJD vào Environment còn Runtime 1.3 trong khi migrate. Không thể "bật chế độ tương thích" để chạy JAR 2.12 trên 2.0.
+</details>
+
+<details><summary><b>WS-U4.</b> Đáp án nào sai về Spark settings tại 11/2026? A. Runtime 2.0 là mặc định cho workspace mới · B. Environment ghi đè runtime mặc định của workspace · C. Có thể bật Autotune trên Runtime 2.0 · D. Đổi runtime có hiệu lực từ session kế tiếp</summary>
+
+**C sai.** Autotune chỉ tương thích Runtime 1.2.
+</details>

@@ -3,9 +3,9 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
-> **Skills measured as of July 21, 2026**  
+> **Đối chiếu Study Guide DP-700 — trang cập nhật 30/10/2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
 > Tham chiếu: [Microsoft Learn — Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 
@@ -754,3 +754,57 @@ Chưa **framing** lại. Model chỉ thấy dữ liệu tại thời điểm fra
 7. Tạo semantic model **Direct Lake** trên bảng Gold; nạp thêm dữ liệu bằng notebook; kiểm tra báo cáo **trước và sau khi framing** để tận mắt thấy sự khác biệt.
 
 **Ngưỡng đạt:** che cột "Công cụ đúng" của bảng mục B và tự trả lời đúng ≥7/8 dòng; trả lời đúng ≥11/12 câu ở mục H.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — MONITOR ITEMS & ALERTS
+
+## U1. Bốn bullet chính thức — không đổi
+
+Monitor data ingestion · Monitor data transformation · Monitor semantic model refresh · Configure alerts.
+
+## U2. Bổ sung công cụ/nguồn dữ liệu monitoring 07–09/2026
+
+| Muốn biết | Công cụ / tính năng | Trạng thái |
+|---|---|---|
+| Chi tiết refresh **từng query** của Dataflow Gen2 | **Dataflow refresh details in Monitoring hub** | Preview (09/2026) |
+| Lịch sử chạy, throughput, sức khỏe **Copy job** tập trung, truy vấn được bằng KQL | **Copy job workspace monitoring** | **GA (09/2026)** |
+| Lỗi/cảnh báo/phục hồi khi Eventstream xử lý (Stream Analytics) | **Eventstream processing logs → workspace monitoring** | Preview (09/2026) |
+| Eventhouse bị **throttling**, kích thước không tối ưu, **scale-out** | **Eventhouse workspace-monitoring logs** | Preview (09/2026) |
+| Thao tác bị từ chối do surge protection | **Capacity Metrics app > Compute > System events**, biểu đồ **Background rejection**, hoặc **capacity events trong Real-Time Hub** | GA (capacity-level) |
+| Quản lý tập trung mọi Activator rule đã tạo ở nhiều nơi | **Activator rule management** trong Real-Time Hub | Preview (09/2026) |
+| Sự kiện soft-delete / recover item | **Item soft-delete and recovery events** trong Real-Time Hub | Preview (09/2026) |
+
+> **Workspace monitoring** (Monitoring Eventhouse + KQL database của workspace) vẫn được What's new liệt kê là **Preview**. Nguyên tắc cũ không đổi: Monitoring hub = **trạng thái từng lần chạy**; Capacity Metrics = **CU, throttling, smoothing**; Workspace monitoring = **log chi tiết lưu lại, truy vấn KQL, đặt alert**.
+
+## U3. Surge protection — phải phân biệt hai cấp
+
+| | Capacity-level | Workspace-level (**Preview**) |
+|---|---|---|
+| Mục đích | Từ chối **background** operation mới khi **24-hour background %** vượt ngưỡng | Không cho **một workspace** dùng quá % CU của capacity trong **24h trượt** |
+| Ngưỡng | **Rejection threshold** + **Recovery threshold** | **Rejection threshold** (% CU) + **block duration** |
+| Cấu hình ở | **Admin portal > Capacity settings > [capacity] > Surge protection** | **OneLake catalog > Govern > Capacities > [capacity] > Surge protection > Workspace consumption** |
+| Trạng thái workspace | — | **Available** (mặc định) · **Mission critical** (miễn capacity-level surge protection, vẫn chịu throttling) · **Blocked** (từ chối cả interactive và background) |
+| Hạn chế | Không dừng job đang chạy; không chặn operation tính theo autoscale; OneLake không bị ảnh hưởng | Kiểm tra mỗi 5 phút (giới hạn mềm); tăng limit **không tự unblock** → đổi limit trước rồi **Unblock** trong Admin portal |
+
+## U4. Câu hỏi tình huống cập nhật
+
+<details><summary><b>MO-U1.</b> Dataflow Gen2 refresh thất bại; bạn cần biết query nào lỗi mà không mở editor. Ở đâu?</summary>
+
+**Monitoring hub** → chọn lần refresh → **refresh details** theo query (Preview 09/2026). Cách GA: mở **Refresh history** của dataflow để xem từng table/activity.
+</details>
+
+<details><summary><b>MO-U2.</b> Cần dashboard và alert về throughput + lỗi của 30 Copy job trong workspace, truy vấn bằng KQL. Bật gì?</summary>
+
+**Workspace monitoring** cho workspace — Copy job đẩy log vào Monitoring KQL database (**GA 09/2026**). Viết KQL trên bảng log, đặt alert qua Activator/KQL queryset.
+</details>
+
+<details><summary><b>MO-U3.</b> Workspace sandbox bị chặn bởi workspace-level surge protection. Admin tăng ngưỡng nhưng workspace vẫn Blocked. Vì sao?</summary>
+
+Tăng limit hoặc xóa rule **không tự unblock**. Sau khi chỉnh limit, admin phải vào **Admin portal > Capacity settings > [capacity] > Workspaces > Unblock** (có thể chọn tha phần consumption đã ghi nhận).
+</details>
+
+<details><summary><b>MO-U4.</b> Capacity bị throttling vào giờ cao điểm; bạn muốn xác nhận surge protection đã từ chối các background job. Mở đâu?</summary>
+
+**Capacity Metrics app > Compute > System events** và biểu đồ **Background rejection**; hoặc capacity events trong **Real-Time Hub**.
+</details>

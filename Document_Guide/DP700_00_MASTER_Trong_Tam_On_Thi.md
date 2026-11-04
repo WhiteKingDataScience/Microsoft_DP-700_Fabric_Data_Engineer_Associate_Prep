@@ -1,13 +1,155 @@
 # DP-700 — FILE TỔNG CHỈ HUY: TRỌNG TÂM ÔN THI & PHẢN XẠ QUYẾT ĐỊNH
 
-> **Bản viết ngày 06/09/2026.** Blueprint tham chiếu: **Skills measured as of July 21, 2026** — ba domain đều có trọng số **30–35%**.
+> **Bản viết ngày 06/09/2026 — cập nhật 05/11/2026.** Blueprint tham chiếu: [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (trang cập nhật **30/10/2026**) — ba domain đều có trọng số **30–35%**, tổng **49 bullet**. Đọc mục **⚡ CẬP NHẬT 05/11/2026** ngay bên dưới trước tiên.
 > Đây là file **đọc mỗi ngày**. Mười file chuyên đề còn lại là nơi tra cứu chi tiết khi file này chỉ bạn tới.
+
+---
+
+## ⚡ CẬP NHẬT 05/11/2026 — ĐỌC PHẦN NÀY TRƯỚC
+
+Mục này gom mọi thay đổi từ sau bản 06/09/2026. Mỗi dòng đã đối chiếu với trang Microsoft Learn ghi ở cột nguồn. Nếu bạn chỉ có 30 phút, hãy đọc **U3** (những điểm làm **đổi đáp án**) và làm **U6** (12 câu drill mới).
+
+### U1. Blueprint chính thức đang hiển thị
+
+Trang [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) được Microsoft cập nhật ngày **30/10/2026**. Trang hiện **không còn dòng "Skills measured as of …" và không có bảng change log**, nên không xác định được ngày hiệu lực chính xác từ trang. Thứ cần học là danh sách bullet đang hiển thị:
+
+| Domain (30–35% mỗi domain) | Functional group | Bullet chính thức | File |
+|---|---|---|---|
+| **D1** Implement and manage | Configure Fabric workspace settings | Spark · domain · OneLake · **data workflow** workspace settings (4) | [01](DP700_Domain1_Implement_Manage_01_Workspace_Settings.md) |
+| | Implement lifecycle management | Version control · database projects · deployment pipelines (3) | [02](DP700_Domain1_Implement_Manage_02_Lifecycle_Management.md) |
+| | Configure security and governance | Workspace-level · item-level · **row/column/object/file-level** · DDM · sensitivity labels · endorse (6) | [03](DP700_Domain1_Implement_Manage_03_Security_and_Governance.md) |
+| | Orchestrate processes | **Choose between a pipeline and a notebook** · schedules & event-based triggers · orchestration patterns + parameters + dynamic expressions (3) | [04](DP700_Domain1_Implement_Manage_04_Orchestrate_Processes.md) |
+| **D2** Ingest and transform | Design and implement loading patterns | Full & incremental · dimensional model · streaming loading pattern (3) | [D2-01](DP700_Domain2_Ingest_Transform_01_Design_Loading_Patterns.md) |
+| | Ingest and transform batch data | Data store · **dataflows vs notebooks vs T-SQL** · shortcuts · mirroring · pipelines · PySpark/SQL/KQL · denormalize · group/aggregate · duplicate/missing/late-arriving (9) | [D2-02](DP700_Domain2_Ingest_Transform_02_Batch_Data.md) |
+| | Ingest and transform streaming data | Streaming engine · eventstreams · Spark structured streaming · KQL · windowing (5) | [D2-03](DP700_Domain2_Ingest_Transform_03_Streaming_Data.md) |
+| **D3** Monitor and optimize | Monitor Fabric items | Ingestion · transformation · semantic model refresh · alerts (4) | [D3-01](DP700_Domain3_Monitor_Optimize_01_Monitor_Items_Alerts.md) |
+| | Identify and resolve errors | Pipeline · dataflow · notebook · eventhouse · eventstream · T-SQL (6) | [D3-02](DP700_Domain3_Monitor_Optimize_02_Identify_Resolve_Errors.md) |
+| | Optimize performance | Lakehouse table · pipeline · warehouse · eventstreams & eventhouses · Spark · query (6) | [D3-03](DP700_Domain3_Monitor_Optimize_03_Optimize_Performance.md) |
+| | | **Tổng: 16 + 17 + 16 = 49 bullet** | |
+
+Hai ghi chú chính thức trên trang vẫn giữ nguyên và quyết định cách ôn: (1) các bullet **chỉ minh họa** cách đánh giá, **related topics có thể ra đề**; (2) phần lớn câu hỏi về tính năng **GA**, nhưng tính năng **Preview** phổ biến vẫn có thể xuất hiện.
+
+### U2. So với blueprint 21/07/2026 mà bộ tài liệu dùng trước đây
+
+| Bản 21/07/2026 (tài liệu cũ) | Study guide hiện hành | Cách ôn từ nay |
+|---|---|---|
+| Configure **Apache Airflow** workspace settings | Configure **data workflow** workspace settings | **Cùng một thứ.** "Data workflow" là tên cũ của **Apache Airflow job**; UI vẫn ghi *Default Data Workflow Setting* trong `Workspace settings > Data Factory > Apache Airflow Runtime Settings`. Học nguyên mục 5 file 01. |
+| Security 8 bullet (có **audit logs** và **OneLake security** riêng) | 6 bullet; RLS/CLS/OLS/**file-level** gộp một dòng | **Vẫn học OneLake security** — đó chính là cơ chế thực hiện folder/file-level, RLS, CLS trên Lakehouse. Audit logs hạ xuống related topic: ôn ở mức "câu hỏi nào → audit log ở Purview". |
+| Choose between **Dataflow Gen2**, pipeline, notebook | Choose between **a pipeline and a notebook** | Ở D1, câu hỏi xoáy vào pipeline vs notebook (orchestrate hay xử lý code). Dataflow Gen2 vẫn được hỏi ở D2 "dataflows vs notebooks vs T-SQL". |
+| Dataflows, notebooks, **KQL**, T-SQL | Dataflows, notebooks, T-SQL | **Không bỏ KQL**: KQL vẫn nằm ở "Transform data by using PySpark, SQL, and KQL", "Process data by using KQL" và windowing. |
+| Streaming 7 bullet (có **native tables vs shortcuts**, **query acceleration**) | 5 bullet | Hai chủ đề này thành related topic của "choose streaming engine / process data by using KQL". Ôn ở mức **bảng quyết định một trang**, không cần sâu. |
+| Errors 7 bullet (có **OneLake shortcut errors**) | 6 bullet | Shortcut errors thành related topic; vẫn hay xuất hiện lồng trong lỗi pipeline/notebook (401/403, connection, path). |
+
+> **Không xóa nội dung cũ.** Mọi mục trên vẫn giữ trong file chuyên đề vì Microsoft cho phép hỏi related topics. Chỉ **hạ mức ưu tiên** khi thời gian ôn hạn hẹp.
+
+### U3. Thay đổi nền tảng làm ĐỔI ĐÁP ÁN
+
+| # | Chủ đề | Tài liệu cũ nói | Đúng tại 11/2026 | Áp dụng khi làm bài | Nguồn |
+|:---:|---|---|---|---|---|
+| 1 | **Fabric Runtime 2.0** | Public Preview | **GA và là runtime mặc định** cho workspace và Environment mới; Microsoft khuyến nghị cho production. Spark **4.1**, Delta **4.2**, Python **3.13**, Java **21**, Scala **2.13**. **Runtime 1.3 = EOSA** (đã công bố hết hỗ trợ) | "Runtime nào cho workload mới/production?" → **Runtime 2.0**. Vẫn phải kiểm tra thư viện/JAR trước khi chuyển workload cũ | [Runtimes](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime) · [Runtime 2.0](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0) |
+| 2 | Delta 4.x features trên Runtime 2.0 | Experimental, chỉ Spark | **Vẫn đúng.** Không bật nếu cùng table phải được SQL endpoint/Warehouse/Power BI đọc; nâng protocol **không đảo ngược được** | Table dùng chung nhiều engine → **không** bật feature Delta 4.2 | [Migration guide](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0-migration-guide) |
+| 3 | Spark Autotune | Preview, chỉ Runtime 1.2 | **Vẫn chỉ Runtime 1.2** (đã hết hỗ trợ) — **không bật được trên 1.3 hay 2.0**; query tuning Preview, tắt mặc định | Đáp án "bật Autotune" cho workload hiện đại gần như luôn **sai**; tune thủ công `shuffle.partitions`, broadcast threshold, `maxPartitionBytes` hoặc dựa vào AQE | [Autotune](https://learn.microsoft.com/en-us/fabric/data-engineering/autotune) |
+| 4 | Spark đọc Event Hubs | `format("eventhubs")` | **`EventHubConnector` bị gỡ khỏi Runtime 2.0** → dùng **Kafka endpoint** của Event Hubs: `format("kafka")`, `<namespace>.servicebus.windows.net:9093`, `SASL_SSL` + `PLAIN`; payload nằm ở cột **`value`** | Code dùng `eventhubs` chạy lỗi trên 2.0 → sửa sang Kafka; giữ checkpoint hoặc restart có kiểm soát với sink idempotent | [Migration guide](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0-migration-guide) |
+| 5 | Mặc định ghi Delta trên Runtime 2.0 | Theo 1.3 | **Deletion vectors bật mặc định** cho table mới; `spark.sql.files.maxPartitionBytes` = **512 MiB** (1.3: 128 MiB); `optimizeWrite.enabled` **không còn set mặc định** (1.3: true) nhưng **adaptive target file size**, **fast optimize**, **file-level target** bật; `spark.sql.ansi.enabled` Fabric đặt **false** | Đọc kế hoạch/small files trên 2.0 với các default mới; không giả định optimize write đang bật | [Migration guide](https://learn.microsoft.com/en-us/fabric/data-engineering/runtime-2-0-migration-guide) |
+| 6 | V-Order | Tắt mặc định workspace mới | **Vẫn đúng**: `spark.sql.parquet.vorder.default=false`; bật bằng table property `delta.parquet.vorder.enabled`, writer option `parquet.vorder.enabled` hoặc resource profile read-heavy | Table read-heavy cho Direct Lake/SQL → cân nhắc V-Order + benchmark | [V-Order](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-optimization-and-v-order) |
+| 7 | Git — đổi branch | Hay bị nhớ nhầm là "chỉ Admin" | **Admin luôn được.** Member/Contributor được đổi branch khi admin bật **"Allow users with at least Contributor role to change Git branch"**, workspace đang kết nối Git và user có write trên mọi item. **Connect/Disconnect vẫn chỉ Admin**; Commit/Update cần Contributor | Câu "least privilege để dev tự đổi branch" → Contributor **+ bật setting**, không phải nâng Admin | [Git permissions](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process) |
+| 8 | Surge protection | Chỉ cấp capacity | Capacity-level (background **rejection/recovery threshold**, Admin portal > Capacity settings) **+ Workspace-level (Preview)**: chặn một workspace vượt % CU trong **cửa sổ 24h trượt**; trạng thái **Available / Mission critical / Blocked**; cấu hình ở **OneLake catalog > Govern > Capacities** | "Một workspace dev ngốn hết capacity" → **workspace-level surge protection**; workspace quan trọng → **Mission critical** | [Surge protection](https://learn.microsoft.com/en-us/fabric/enterprise/surge-protection) |
+| 9 | Copy job SCD Type 2 | Preview | **Vẫn Preview**; không hỗ trợ khi CDC từ **Oracle**, hoặc khi bạn tự tạo schema ở đích. Custom staging (cho CDC/SCD2), SQL CDC custom capture names và **Copy job workspace monitoring** là **GA 09/2026** | "SCD2 ít công sức nhất" → Copy job (CDC + SCD2) nếu nguồn hỗ trợ; nguồn Oracle → tự viết MERGE/SCD2 | [CDC in Copy job](https://learn.microsoft.com/fabric/data-factory/cdc-copy-job) · [What's new](https://learn.microsoft.com/en-us/fabric/fundamentals/whats-new) |
+| 10 | Warehouse data clustering | Preview | **Vẫn Preview**: `WITH (CLUSTER BY (...))` chỉ lúc `CREATE TABLE`/CTAS, **1–4 cột**, không thêm/sửa sau, không dùng cột `IDENTITY`, `SELECT INTO` không hỗ trợ | Đổi cột clustering → **CTAS sang table mới** | [Data clustering](https://learn.microsoft.com/en-us/fabric/data-warehouse/data-clustering) |
+| 11 | Materialized Lake View | SQL `CREATE MATERIALIZED LAKE VIEW` | Thêm **PySpark authoring (Preview, chỉ full refresh)**; refresh tối ưu chọn **incremental / full / skip**, incremental cần **Change Data Feed** trên source; constraint `ON MISMATCH DROP` hoặc `FAIL` | "MLV luôn full refresh" → bật **CDF** trên source table | [MLV overview](https://learn.microsoft.com/en-us/fabric/data-engineering/materialized-lake-views/overview-materialized-lake-view) |
+
+### U4. Tính năng mới (Preview) từ 07–09/2026 — biết tên và mục đích là đủ
+
+| Workload | Tính năng (Preview) | Một dòng để nhớ |
+|---|---|---|
+| CI/CD | **Deployment plans** | Canvas trực quan cho thứ tự deploy item và pre/post actions |
+| CI/CD | **File-level Git commit** | Commit từng file, phần chưa xong vẫn ở workspace |
+| CI/CD | **Branch workspace admin profiles** | Admin định nghĩa identity/settings chuẩn cho branch workspace của dev |
+| CI/CD | **Warehouse CI/CD 2.0** | Định nghĩa item v2.0 dựa trên DacFx, so sánh deploy chính xác hơn |
+| Data Factory | **Pipeline-level dependencies** | Pipeline hạ nguồn chỉ chạy khi điều kiện pipeline thượng nguồn thỏa |
+| Data Factory | **Fabric Actions activity** · **Refresh Materialized Lake View activity** | Gọi Fabric REST có xác thực / refresh MLV ngay trong pipeline |
+| Data Factory | **Copy job ↔ Eventstream** · **Dataflow Gen1 → Gen2 Upgrade Wizard** | Eventstream làm nguồn/đích Copy job / nâng cấp tại chỗ giữ ID, schedule |
+| Monitoring | **Dataflow refresh details in Monitoring hub** | Xem chi tiết refresh theo query ngay trong hub |
+| RTI | **Eventstream reference data enrichment** | Join event với bảng Delta tham chiếu trong Lakehouse (no-code hoặc SQL) |
+| RTI | **Eventstream processing logs → Workspace monitoring** | Cảnh báo/lỗi/phục hồi của xử lý stream vào KQL database monitoring |
+| RTI | **Eventhouse workspace-monitoring logs** | Ghi nhận throttling, suboptimal size, scale-out |
+| RTI | **Update policies on accelerated shortcuts** | Transform lúc ingest cho OneLake shortcut có query acceleration |
+| Warehouse | **T-SQL `QUALIFY`**, mở rộng grouping | Lọc theo kết quả window function không cần subquery |
+| Spark | **Custom live pools** (Runtime 2.0), **delegated pool management** | Pool giữ ấm; Member cấu hình qua Environment khi admin cho phép |
+
+> **Chiến thuật:** Preview mới ra hiếm khi thành câu hỏi chính. Dùng bảng này để **loại đáp án**: thấy tên lạ trong đáp án thì biết nó là gì, không bị lừa.
+
+### U5. Practice Assessment — đổi nơi làm
+
+Study guide hiện khuyến nghị **Practice Assessment mới trên AI Skills Navigator** (đăng nhập tại [aka.ms/DP700-PA](http://aka.ms/DP700-PA)) vì sát trải nghiệm thi hơn. Bản cũ trên Microsoft Learn ([aka.ms/DP700-LearnPA](https://aka.ms/DP700-LearnPA)) **không còn được cập nhật**. Từ nay, readiness gate ở mục 9 đo bằng **bản mới**.
+
+### U6. Drill Vòng 7 — 12 câu cập nhật 11/2026
+
+<details><summary><b>U-1.</b> Blueprint hiện ghi "Configure data workflow workspace settings". Đó là cấu hình của item nào, ở đâu?</summary>
+
+**Apache Airflow job** (tên cũ "Data workflows"). `Workspace settings > Data Factory > Apache Airflow Runtime Settings` → *Default Data Workflow Setting*: **Starter pool** (mặc định, tắt sau 20 phút không hoạt động, cho dev) hoặc **Custom pool** (always-on, node size Small/Large, autoscale, extra nodes — cho production).
+</details>
+
+<details><summary><b>U-2.</b> Team tạo workspace mới cho dự án Spark năm 2026. Runtime mặc định là gì và có nên giữ cho production?</summary>
+
+**Runtime 2.0** — GA, mặc định cho workspace/Environment mới, Microsoft khuyến nghị cho production. Ngoại lệ: không bật feature Delta 4.2 experimental trên table mà SQL endpoint/Power BI cũng đọc.
+</details>
+
+<details><summary><b>U-3.</b> Notebook streaming dùng `spark.readStream.format("eventhubs")` chạy tốt trên 1.3 nhưng lỗi sau khi chuyển 2.0. Vì sao, sửa thế nào?</summary>
+
+`EventHubConnector` **đã bị gỡ** khỏi Runtime 2.0. Chuyển sang **Kafka endpoint** của Event Hubs (`format("kafka")`, port **9093**, `SASL_SSL`/`PLAIN`, username `$ConnectionString`), parse cột **`value`**. Kiểm tra checkpoint cũ có restart được không; nếu không, restart với checkpoint mới và sink idempotent.
+</details>
+
+<details><summary><b>U-4.</b> Đáp án gợi ý "bật Spark Autotune trên Runtime 2.0 để tự tối ưu shuffle partitions". Đúng hay sai?</summary>
+
+**Sai.** Autotune chỉ tương thích **Runtime 1.2** (đã hết hỗ trợ), không bật được trên 1.3/2.0. Dùng AQE, chỉnh `spark.sql.shuffle.partitions`, broadcast join, xử lý skew.
+</details>
+
+<details><summary><b>U-5.</b> Dev (Contributor) cần tự đổi Git branch của workspace dev mà không được nâng Admin. Cần gì?</summary>
+
+Admin bật **"Allow users with at least Contributor role to change Git branch"**; workspace đang kết nối Git; dev có **write trên mọi item**. Connect/disconnect Git vẫn chỉ Admin.
+</details>
+
+<details><summary><b>U-6.</b> Một workspace sandbox liên tục ngốn CU làm report production bị chậm. Admin muốn chặn riêng workspace đó, không đụng các workspace khác. Dùng gì?</summary>
+
+**Workspace-level surge protection (Preview)**: đặt ngưỡng % CU trên cửa sổ 24h trượt (OneLake catalog > Govern > Capacities > Surge protection > Workspace consumption); đánh dấu workspace production là **Mission critical**; workspace vượt ngưỡng sẽ bị **Blocked**.
+</details>
+
+<details><summary><b>U-7.</b> Copy job CDC từ Oracle, yêu cầu giữ lịch sử SCD Type 2. Copy job có tự làm được không?</summary>
+
+**Không** — SCD Type 2 trong Copy job (Preview) **chưa hỗ trợ CDC từ Oracle**. Dùng Copy job ở chế độ Merge vào staging rồi tự viết SCD2 bằng Delta `MERGE`/notebook (hoặc T-SQL ở Warehouse).
+</details>
+
+<details><summary><b>U-8.</b> Muốn đổi cột clustering của bảng Warehouse đã tạo với `CLUSTER BY (CustomerID)`. Làm sao?</summary>
+
+Không `ALTER` được. **CTAS** sang bảng mới `WITH (CLUSTER BY (...))`, rồi đổi tên. Tối đa 4 cột; không dùng cột `IDENTITY`; `SELECT INTO` không hỗ trợ clustering.
+</details>
+
+<details><summary><b>U-9.</b> MLV luôn chạy full refresh dù source chỉ thêm vài dòng. Nguyên nhân thường gặp?</summary>
+
+Source table **chưa bật Change Data Feed** → optimal refresh chỉ còn full/skip. Bật CDF (`delta.enableChangeDataFeed = true`) trên source; kiểm tra truy vấn thuộc pattern hỗ trợ (GROUP BY, left outer/semi join, CTE). MLV tạo bằng PySpark (Preview) luôn full refresh.
+</details>
+
+<details><summary><b>U-10.</b> Bảng mới tạo trên Runtime 2.0 có deletion vectors không? Điều đó ảnh hưởng gì?</summary>
+
+**Có** — Runtime 2.0 đặt `spark.databricks.delta.properties.defaults.enableDeletionVectors = true`. DELETE/UPDATE/MERGE ghi nhanh hơn (đánh dấu dòng xóa thay vì viết lại file), nhưng cần **OPTIMIZE/purge** định kỳ; kiểm tra mọi engine đọc table hỗ trợ.
+</details>
+
+<details><summary><b>U-11.</b> Blueprint mới không còn bullet "OneLake security". Có nên bỏ ôn?</summary>
+
+**Không.** Bullet "row-level, column-level, object-level, and **file-level** access controls" được thực hiện bằng OneLake security roles (folder/file, RLS, CLS) và SQL (RLS/CLS/DDM). Admin/Member/Contributor vẫn **không bị** OneLake security roles ràng buộc; Viewer và người có quyền Read item thì bị.
+</details>
+
+<details><summary><b>U-12.</b> Bạn nên đo readiness bằng Practice Assessment nào?</summary>
+
+**Bản mới trên AI Skills Navigator** (aka.ms/DP700-PA). Bản legacy trên Learn không còn được cập nhật, điểm cao ở đó không còn đại diện cho đề hiện hành.
+</details>
 
 ---
 
 ## 0. CÁCH DÙNG FILE NÀY
 
-Bộ tài liệu này phủ đủ **54/54 objective** của blueprint. Nhưng phủ đủ kiến thức và **thi đậu** là hai việc khác nhau. DP-700 là kỳ thi **scenario-based**: đề hiếm khi hỏi "X là gì", mà hỏi "trong ngữ cảnh này, chọn X hay Y, và vì sao".
+Bộ tài liệu này phủ đủ **49/49 bullet** của study guide hiện hành, cộng các related topic của bản 21/07/2026. Nhưng phủ đủ kiến thức và **thi đậu** là hai việc khác nhau. DP-700 là kỳ thi **scenario-based**: đề hiếm khi hỏi "X là gì", mà hỏi "trong ngữ cảnh này, chọn X hay Y, và vì sao".
 
 > Mục tiêu của file này là đưa kiến thức từ mức **"nhìn thấy thì nhận ra"** lên mức **"không nhìn tài liệu vẫn nói lại được và áp dụng được"**.
 
@@ -38,11 +180,11 @@ Hai mức đó khác nhau rất xa. Người ở mức nhận ra sẽ làm tốt
 
 | Domain | Trọng số | Nhóm kỹ năng (functional group) | Số objective |
 |---|:---:|---|:---:|
-| **D1 — Implement and manage an analytics solution** | 30–35% | Workspace settings · Lifecycle management · Security & governance · Orchestrate processes | 4 + 3 + 8 + 3 = 18 |
-| **D2 — Ingest and transform data** | 30–35% | Loading patterns · Batch data · Streaming data | 3 + 9 + 7 = 19 |
-| **D3 — Monitor and optimize an analytics solution** | 30–35% | Monitor Fabric items · Identify and resolve errors · Optimize performance | 4 + 7 + 6 = 17 |
+| **D1 — Implement and manage an analytics solution** | 30–35% | Workspace settings · Lifecycle management · Security & governance · Orchestrate processes | 4 + 3 + 6 + 3 = 16 |
+| **D2 — Ingest and transform data** | 30–35% | Loading patterns · Batch data · Streaming data | 3 + 9 + 5 = 17 |
+| **D3 — Monitor and optimize an analytics solution** | 30–35% | Monitor Fabric items · Identify and resolve errors · Optimize performance | 4 + 6 + 6 = 16 |
 
-Điểm quan trọng của blueprint 21/07/2026: **cả ba domain đều 30–35%**. Không còn domain nào "nhẹ" để bỏ qua — đặc biệt **Monitor and optimize** nay nặng ngang hai domain kia. Nhiều thí sinh vẫn ôn theo trọng số cũ (D3 chỉ 25–30%) và mất điểm ở đúng chỗ này.
+Điểm quan trọng của study guide hiện hành (giữ nguyên từ bản 21/07/2026): **cả ba domain đều 30–35%**. Không còn domain nào "nhẹ" để bỏ qua — đặc biệt **Monitor and optimize** nay nặng ngang hai domain kia. Nhiều thí sinh vẫn ôn theo trọng số cũ (D3 chỉ 25–30%) và mất điểm ở đúng chỗ này.
 
 ### 1.2 Bảy vùng khó nhất của DP-700
 
@@ -54,15 +196,15 @@ Hai mức đó khác nhau rất xa. Người ở mức nhận ra sẽ làm tốt
 | **2** | Design and implement loading patterns | [D2-01 Loading Patterns](DP700_Domain2_Ingest_Transform_01_Design_Loading_Patterns.md) | ≥85% | Hỏi **chi tiết triển khai** (idempotency, SCD2, late-arriving), không hỏi khái niệm |
 | **3** | Workspace settings | [01 Workspace Settings](DP700_Domain1_Implement_Manage_01_Workspace_Settings.md) | ≥85% | Rất dễ nhầm **tenant setting** với **workspace setting**; ma trận role hay bị nhớ sai |
 | **4** | Implement lifecycle management | [02 Lifecycle Management](DP700_Domain1_Implement_Manage_02_Lifecycle_Management.md) | ≥85% | Ba công cụ Git / deployment pipeline / variable library có vai trò chồng lấn trong đầu người học |
-| **5** | Identify and resolve errors | [D3-02 Resolve Errors](DP700_Domain3_Monitor_Optimize_02_Identify_Resolve_Errors.md) | ≥80% | 7 objective; đòi hỏi biết **mở đúng công cụ chẩn đoán** trước khi sửa |
+| **5** | Identify and resolve errors | [D3-02 Resolve Errors](DP700_Domain3_Monitor_Optimize_02_Identify_Resolve_Errors.md) | ≥80% | 6 bullet (+ shortcut errors là related topic); đòi hỏi biết **mở đúng công cụ chẩn đoán** trước khi sửa |
 | **6** | Monitor Fabric items | [D3-01 Monitor Items](DP700_Domain3_Monitor_Optimize_01_Monitor_Items_Alerts.md) | ≥80% | Bốn công cụ monitoring rất dễ lẫn vào nhau |
-| **7** | Ingest and transform streaming data | [D2-03 Streaming Data](DP700_Domain2_Ingest_Transform_03_Streaming_Data.md) | ≥80% | 7 objective; KQL, windowing và checkpoint là phần nhiều người bỏ qua |
+| **7** | Ingest and transform streaming data | [D2-03 Streaming Data](DP700_Domain2_Ingest_Transform_03_Streaming_Data.md) | ≥80% | 5 bullet (+ native tables/shortcuts, query acceleration là related topic); KQL, windowing và checkpoint là phần nhiều người bỏ qua |
 
 **Ba nhóm còn lại — không được để nguội:**
 
 | Vùng | File | Ghi chú |
 |---|---|---|
-| Security & governance | [03 Security](DP700_Domain1_Implement_Manage_03_Security_and_Governance.md) | **8 objective — nhóm lớn nhất blueprint**. Rủi ro cao nếu chủ quan |
+| Security & governance | [03 Security](DP700_Domain1_Implement_Manage_03_Security_and_Governance.md) | **6 bullet** (+ audit logs, OneLake security là related topic nhưng vẫn là cơ chế thực hiện file-level/RLS/CLS). Rủi ro cao nếu chủ quan |
 | Ingest and transform batch data | [D2-02 Batch Data](DP700_Domain2_Ingest_Transform_02_Batch_Data.md) | 9 objective — nhóm lớn thứ nhì |
 | Orchestrate processes | [04 Orchestrate](DP700_Domain1_Implement_Manage_04_Orchestrate_Processes.md) | 3 objective nhưng xuất hiện xuyên suốt case study |
 
@@ -692,9 +834,12 @@ Các khẳng định dưới đây xuất hiện rất nhiều trong tài liệu
 |---|---|
 | "V-Order mặc định luôn bật trong Fabric" | Với **workspace mới**, V-Order **tắt mặc định** cho Spark. Bật bằng `spark.sql.parquet.vorder.default=true`, `option("parquet.vorder.enabled","true")`, hoặc `OPTIMIZE ... VORDER`. |
 | "Direct Lake không hỗ trợ View" | Chính xác hơn: model Direct Lake **on SQL endpoint** khi gặp view (hoặc RLS/CLS/DDM ở tầng SQL, hoặc vượt guardrail) sẽ **fallback sang DirectQuery**. Direct Lake **on OneLake** chạy DirectLakeOnly nên **báo lỗi thay vì fallback**. |
-| "Trọng số ba domain là 35–40 / 30–35 / 25–30%" | Đó là blueprint **cũ**. Theo bản **21/07/2026**, cả ba domain đều **30–35%**. Monitor & Optimize nay nặng ngang hai domain kia. |
+| "Trọng số ba domain là 35–40 / 30–35 / 25–30%" | Đó là blueprint **cũ**. Theo bản **21/07/2026** và study guide hiện hành (30/10/2026), cả ba domain đều **30–35%**. Monitor & Optimize nay nặng ngang hai domain kia. |
 | "Fabric Warehouse dùng `CREATE MATERIALIZED VIEW`" | Warehouse **không** hỗ trợ materialized view. Materialized **Lake** View là tính năng của **Lakehouse/Spark**. |
-| "Spark Autotune nên bật cho mọi workload" | Autotune là **Preview, tắt mặc định**, và theo tài liệu hiện hành chỉ tương thích **Runtime 1.2**; không chạy khi bật high concurrency. |
+| "Spark Autotune nên bật cho mọi workload" | Autotune (query tuning) là **Preview, tắt mặc định**, và chỉ tương thích **Runtime 1.2** (đã hết hỗ trợ) — **không bật được trên Runtime 1.3/2.0**; không chạy khi bật high concurrency. |
+| "Runtime 2.0 còn Preview, production nên ở 1.3" | Từ 10/2026, **Runtime 2.0 là GA và mặc định**, Microsoft khuyến nghị cho production; **Runtime 1.3 là EOSA**. Chỉ tránh bật feature Delta 4.2 experimental trên table dùng chung nhiều engine. |
+| "Chỉ Admin được đổi Git branch" | Admin luôn được; **Contributor/Member** được khi admin bật *Allow users with at least Contributor role to change Git branch* và user có write trên mọi item. |
+| "Spark đọc Event Hubs bằng `format('eventhubs')`" | Trên **Runtime 2.0** connector này đã bị gỡ → dùng **Kafka endpoint** (`format('kafka')`, port 9093). |
 | "Interactive smoothing là đúng 5 phút" / "đúng 10 phút" | Đừng học một con số cứng. Học **cơ chế**: interactive smoothing theo phút, background trải **24 giờ**, throttling tiến triển delay → interactive rejection → background rejection. |
 | "OneLake shortcut trỏ được tới Azure SQL Database" | Shortcut trỏ tới **storage** (OneLake, ADLS Gen2, S3, GCS, S3-compatible, Dataverse). Với database quan hệ dùng **Mirroring**. |
 | "`MERGE` luôn idempotent" | Không. Cần dedup source theo business key, match key duy nhất, điều kiện xác định và commit state sau khi thành công. |
@@ -731,9 +876,9 @@ Tối    15 phút: mở Capacity Metrics/Monitoring Hub trong tenant, tự hỏi
 
 ### 9.1 Tám điều kiện sẵn sàng
 
-- [ ] Practice Assessment đạt **≥85% ở CẢ BA domain**, **hai lượt liên tiếp** (không phải 85% tổng).
-- [ ] Trả lời đúng **≥65/72** câu drill ở mục 6 khi che đáp án, ở hai ngày khác nhau.
-- [ ] Giải thích được 54 objective bằng lời của mình, không đọc nguyên văn tài liệu.
+- [ ] Practice Assessment **bản mới trên AI Skills Navigator** ([aka.ms/DP700-PA](http://aka.ms/DP700-PA)) đạt **≥85% ở CẢ BA domain**, **hai lượt liên tiếp** (không phải 85% tổng).
+- [ ] Trả lời đúng **≥65/72** câu drill ở mục 6 **và ≥11/12** câu Vòng 7 ở mục U6 khi che đáp án, ở hai ngày khác nhau.
+- [ ] Giải thích được 49 bullet của study guide (và các related topic ở U2) bằng lời của mình, không đọc nguyên văn tài liệu.
 - [ ] Viết từ trí nhớ (không copy): một ví dụ end-to-end **T-SQL**, một **PySpark**, một **KQL**.
 - [ ] Tự làm xong lab: watermark incremental, MERGE idempotent, SCD2, Git + deployment pipeline, Eventstream → Eventhouse/Lakehouse, RLS test bằng Viewer, `OPTIMIZE`/`VACUUM`, đọc Capacity Metrics.
 - [ ] Đọc vanh vách 8 cụm nhầm lẫn ở mục 3 và nêu được **điều kiện loại trừ** của từng cặp.

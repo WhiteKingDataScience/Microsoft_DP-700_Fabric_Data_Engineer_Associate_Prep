@@ -1,9 +1,9 @@
 # DP-700: Implement Lifecycle Management in Fabric
 ## Implement and manage an analytics solution (30–35%)
-### Skills measured as of July 21, 2026
+### Đối chiếu Study Guide DP-700 (trang cập nhật 30/10/2026)
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
 
 > [!CAUTION]
@@ -89,7 +89,7 @@ Khi Git update/deploy tạo item ở workspace đích, Fabric cố **auto-bind**
 ### 2.4 Cách kết nối Workspace với Git
 
 **Bước 1: Prerequisites** — đối chiếu [ma trận quyền Git Integration](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-integration-process#required-fabric-permissions-for-popular-actions) vì quyền phụ thuộc thao tác (connect, update, commit, switch branch).
-- **Chỉ Workspace Admin** có thể kết nối, đồng bộ ban đầu hoặc ngắt kết nối workspace với Git. Sau khi kết nối, Member/Contributor có đủ Write và Git permissions có thể commit/update; branch switching cần workspace setting tương ứng.
+- **Chỉ Workspace Admin** có thể kết nối, đồng bộ ban đầu hoặc ngắt kết nối workspace với Git. Sau khi kết nối, Member/Contributor có đủ Write và Git permissions có thể commit/update; **đổi branch**: Admin luôn được; Member/Contributor chỉ được khi Admin bật workspace setting **"Allow users with at least Contributor role to change Git branch"**, workspace đang kết nối Git và user có **write trên mọi item** (đối chiếu Learn 10/2026).
 - Git repository phải tồn tại trước khi kết nối
 - Tenant setting "Users can sync workspace items with their Git repositories" phải được **enabled**
 
@@ -1018,3 +1018,57 @@ Không phải nhiệm vụ của Git. Git là **CI (version/tích hợp)**; prom
 7. Xoá một bảng dữ liệu ở Test, deploy lại từ Dev → xác nhận **dữ liệu không quay lại** (chứng minh deploy không mang dữ liệu).
 
 **Ngưỡng đạt:** vẽ lại được sơ đồ mục A trên giấy trắng, và trả lời đúng ≥11/12 câu ở mục G.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — LIFECYCLE MANAGEMENT
+
+## U1. Ba bullet chính thức — không đổi
+
+Configure version control · Implement database projects · Create and configure deployment pipelines. Nội dung chính của file vẫn đúng; phần dưới bổ sung các thay đổi 07–10/2026.
+
+## U2. Ma trận quyền Git — bản đã đối chiếu (Learn, 10/2026)
+
+| Thao tác | Quyền tối thiểu |
+|---|---|
+| Connect / Disconnect workspace với Git | **Admin** |
+| Sync (theo bảng quyền) | **Admin** |
+| **Switch branch** | **Admin** luôn được. **Member/Contributor** được khi: Admin bật *Allow users with at least Contributor role to change Git branch* + workspace đang kết nối Git + user có **write trên mọi item** |
+| Commit to Git / Update from Git | **Contributor** với write trên mọi item; có thể cần **Owner** của item nếu tenant switch chặn non-owner update, và **Build** trên dependency bên ngoài |
+| Provider hỗ trợ | **Azure Repos** và **GitHub** (kể cả GitHub Enterprise, nhưng **không** hỗ trợ GHE Server có custom domain, GHE Server trên private network, IP allowlist; không hỗ trợ sovereign cloud) |
+
+> **Mẹo least privilege:** đề hỏi "cho dev tự đổi branch mà không cấp Admin" → bật setting trên, giữ dev ở **Contributor**.
+
+## U3. Tính năng mới 07–09/2026 (Preview) — nhận diện để loại đáp án
+
+| Tính năng | Ý nghĩa | Không nhầm với |
+|---|---|---|
+| **Deployment plans** | Canvas trực quan để định **thứ tự deploy** item và **pre/post actions** | Deployment rules (đổi giá trị theo stage) |
+| **File-level Git commit** | Commit **từng file** đã chọn; file chưa xong vẫn nằm ở workspace | Commit theo item như trước |
+| **Branch workspace admin profiles** | Admin định nghĩa identity và settings chuẩn cho **branch workspace** mà dev tạo | Workspace identity |
+| **Warehouse CI/CD 2.0** | Định nghĩa item Warehouse **v2.0 dựa trên DacFx**, extract tăng dần cho Git, so sánh chính xác hơn trong deployment pipeline | SQL database project tự build bằng `dotnet build` |
+| **Warehouse pre/post deployment support** | Chạy script validate/setup quanh deploy tự động | Variable library |
+| **Git Integration Workspace Relation API** | API quản lý quan hệ workspace cha ↔ branch workspace | Git REST API commit/update |
+| **fabric-cicd v1.2.0 bulk publish** | Publish nhiều item trong một lời gọi bulk import API | Deployment pipeline UI |
+
+## U4. Câu hỏi tình huống cập nhật
+
+<details><summary><b>LC-U1.</b> Dev team gồm 6 Contributor. Họ phải đổi qua lại giữa các feature branch trên workspace dev mà không ai được cấp Admin. Admin cần làm gì?</summary>
+
+Bật **"Allow users with at least Contributor role to change Git branch"** trong workspace settings; đảm bảo Contributor có write trên mọi item. Không cần nâng role, không cần tạo workspace mới cho từng lần đổi branch.
+</details>
+
+<details><summary><b>LC-U2.</b> Dev đang sửa 3 notebook, chỉ 1 notebook hoàn thành. Họ muốn đưa riêng phần đã xong lên Git, giữ phần dở dang trong workspace. Tính năng nào giải quyết gọn nhất?</summary>
+
+**File-level Git commit (Preview)** — chọn đúng file cần commit. Cách GA truyền thống: chỉ chọn item đã xong trong danh sách commit (commit theo item).
+</details>
+
+<details><summary><b>LC-U3.</b> Khi deploy Test → Prod, lakehouse phải lên trước, sau đó notebook, rồi chạy script kiểm tra. Bạn cần mô tả trực quan thứ tự này. Dùng gì?</summary>
+
+**Deployment plans (Preview)**. Deployment rules chỉ đổi giá trị (connection, default lakehouse, parameter) theo stage; Variable library lưu giá trị cấu hình — cả hai không định thứ tự deploy.
+</details>
+
+<details><summary><b>LC-U4.</b> Ba lựa chọn: Git integration · Deployment pipeline · Variable library. Mỗi cái trả lời câu hỏi nào?</summary>
+
+Git: **"code nằm ở đâu, ai đổi gì"** (version control, branch). Deployment pipeline: **"đưa item qua Dev → Test → Prod"** (không mang dữ liệu). Variable library: **"giá trị nào khác nhau giữa các môi trường"** (value sets theo stage).
+</details>

@@ -3,9 +3,9 @@
 
 
 > [!IMPORTANT]
-> **Bản hiệu chỉnh ngày 09/08/2026.** Nội dung được đối chiếu với blueprint DP-700 có hiệu lực từ **21/07/2026**. Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
+> **Bản cập nhật ngày 05/11/2026.** Đối chiếu với [Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700) (Microsoft cập nhật trang ngày **30/10/2026**) và tài liệu Microsoft Learn tháng 10–11/2026. Bản trước (09/08/2026) dựa trên blueprint 21/07/2026; những gì đã đổi nằm ở chương **⚡ CẬP NHẬT 05/11/2026** cuối file và ở đầu file [MASTER](DP700_00_MASTER_Trong_Tam_On_Thi.md). Microsoft cho biết phần lớn câu hỏi tập trung vào tính năng GA, nhưng tính năng Preview phổ biến vẫn có thể xuất hiện. Với các bảng “supported items”, runtime, limits và trạng thái Preview/GA, hãy kiểm tra Microsoft Learn lần cuối trước ngày thi.
 
-> **Skills measured as of July 21, 2026**  
+> **Đối chiếu Study Guide DP-700 — trang cập nhật 30/10/2026**  
 > Tài liệu chuẩn bị thi chứng chỉ **Microsoft Fabric Data Engineer Associate (DP-700)**  
 > Tham chiếu: [Microsoft Learn — Study Guide DP-700](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/dp-700)
 
@@ -55,6 +55,8 @@ Data already in OneLake for KQL?  → shortcut; frequent query → acceleration
 - Real-time Mode support surface hẹp hơn micro-batch trong preview.
 
 ## 2. Choose Between Native Tables and OneLake Shortcuts in Real-Time Intelligence
+
+> **Cập nhật 05/11/2026:** không còn là bullet riêng trong study guide hiện hành — xếp vào **related topic** của "Choose an appropriate streaming engine" / "Process data by using KQL". Ôn ở mức bảng quyết định (mục 2.4).
 
 ### 2.1. Native Tables trong Eventhouse
 
@@ -123,6 +125,8 @@ Dữ liệu streaming cần KQL queries?
 ---
 
 ## 3. Choose Between Query Acceleration and Standard OneLake Shortcuts
+
+> **Cập nhật 05/11/2026:** cũng là **related topic**. Điểm mới (Preview, 09/2026): **update policy có thể áp lên accelerated shortcuts** để biến đổi lúc ingest.
 
 ### 3.1. Standard OneLake Shortcuts
 
@@ -291,7 +295,7 @@ Eventstream: IoT_Sensor_Stream
 Structured Streaming = **source → transformations → sink**, với always-on hoặc scheduled incremental.
 
 ### 5.2. Sources Fabric tài liệu hóa
-Files (`text/csv/json/parquet/orc`), Delta, Kafka, Azure Event Hubs, Fabric Eventstream và `rate` cho test.
+Files (`text/csv/json/parquet/orc`), Delta, Kafka, Azure Event Hubs (**Runtime 2.0: đọc qua Kafka endpoint**, connector `eventhubs` đã bị gỡ), Fabric Eventstream và `rate` cho test.
 
 > [!WARNING]
 > `cloudFiles` / Databricks Auto Loader không phải API Fabric Spark được Microsoft Learn tài liệu hóa. Với DP-700, dùng built-in file source.
@@ -320,22 +324,36 @@ q=(stream.writeStream.format('delta').outputMode('append')
 q.awaitTermination()
 ```
 
-### 5.4. Event Hubs → Delta
+### 5.4. Event Hubs → Delta (Runtime 2.0: qua Kafka endpoint)
+
+> **Cập nhật 05/11/2026:** `EventHubConnector` (`format("eventhubs")`) **đã bị gỡ khỏi Runtime 2.0** — runtime GA và mặc định hiện nay. Đọc Event Hubs bằng **Kafka endpoint** (port **9093**); payload nằm ở cột **`value`** (không phải `body`).
 
 ```python
 import pyspark.sql.functions as F
-from pyspark.sql.types import *
 
-raw=(spark.readStream.format('eventhubs').options(**ehConf).load())
-parsed=(raw.withColumn('bodyText',F.col('body').cast('string'))
-        .select(F.from_json('bodyText',schema).alias('e'))
-        .select('e.*'))
+conn_str = notebookutils.credentials.getSecret("https://contoso-kv.vault.azure.net/", "eh-conn")
 
-q=(parsed.writeStream.format('delta').outputMode('append')
-   .option('checkpointLocation','Files/checkpoints/eventhub')
-   .toTable('bronze_iot'))
+raw = (spark.readStream.format("kafka")
+       .option("kafka.bootstrap.servers", "contoso-eh.servicebus.windows.net:9093")
+       .option("subscribe", "telemetry")                       # tên Event Hub = Kafka topic
+       .option("kafka.security.protocol", "SASL_SSL")
+       .option("kafka.sasl.mechanism", "PLAIN")
+       .option("kafka.sasl.jaas.config",
+               'org.apache.kafka.common.security.plain.PlainLoginModule required '
+               f'username="$ConnectionString" password="{conn_str}";')
+       .option("startingOffsets", "latest")
+       .load())
+
+parsed = (raw.select(F.from_json(F.col("value").cast("string"), schema).alias("e"))
+             .select("e.*"))
+
+q = (parsed.writeStream.format("delta").outputMode("append")
+     .option("checkpointLocation", "Files/checkpoints/eventhub_kafka")
+     .toTable("bronze_iot"))
 q.awaitTermination()
 ```
+
+> Code cũ trên Runtime 1.3 (`spark.readStream.format("eventhubs").options(**ehConf)`, cột `body`) chỉ còn để nhận diện khi đọc đề. Checkpoint của query cũ không dùng lại cho source Kafka → checkpoint mới + sink idempotent.
 
 ### 5.5. Output modes
 - `append`: new/finalized rows.
@@ -1052,7 +1070,7 @@ D. Use Spark Structured Streaming instead of Eventstream
 
 ---
 
-*Tài liệu được tổng hợp dựa trên Skills Measured as of July 21, 2026*  
+*Tài liệu được tổng hợp dựa trên Study Guide DP-700 (trang cập nhật 30/10/2026); bản trước dựa trên Skills Measured 21/07/2026*  
 *Nguồn tham khảo: Microsoft Learn, Microsoft Fabric Documentation*
 
 
@@ -1421,7 +1439,7 @@ KQL bin() = fixed bucket cho summarize, không phải toàn bộ Stream Analytic
 
 # 🎯 CHƯƠNG BỔ SUNG 06/09/2026 — HỌC LẠI TỪ GỐC
 
-> **Vì sao có chương này:** *Ingest and transform streaming data* có **7 objective** và là phần nhiều thí sinh bỏ qua vì nghĩ "mình giỏi Spark/SQL là đủ". Thực tế đề hỏi rất sâu về Eventstream, windowing, checkpoint và KQL — kể cả với người mạnh batch. Chương này viết lại theo hướng **hình dung được luồng dữ liệu + phản xạ chọn engine + tự kiểm tra**.
+> **Vì sao có chương này:** *Ingest and transform streaming data* có **5 bullet trong study guide hiện hành** (bản 21/07/2026 có 7) và là phần nhiều thí sinh bỏ qua vì nghĩ "mình giỏi Spark/SQL là đủ". Thực tế đề hỏi rất sâu về Eventstream, windowing, checkpoint và KQL — kể cả với người mạnh batch. Chương này viết lại theo hướng **hình dung được luồng dữ liệu + phản xạ chọn engine + tự kiểm tra**.
 > Xem thêm: [File tổng chỉ huy](DP700_00_MASTER_Trong_Tam_On_Thi.md)
 
 ## A. HIỂU BẢN CHẤT TRONG 60 GIÂY
@@ -1506,8 +1524,8 @@ from delta.tables import DeltaTable
 
 # 1. ĐỌC
 df = (spark.readStream
-      .format("cloudFiles")                    # hoặc "delta", "kafka", "eventhubs"
-      .option("cloudFiles.format", "json")
+      .format("json")                          # file source built-in; hoặc "delta", "kafka" (Event Hubs qua Kafka endpoint)
+      .option("maxFilesPerTrigger", 100)       # cloudFiles/Auto Loader KHÔNG phải API Fabric được tài liệu hóa
       .schema(my_schema)                       # streaming nên khai báo schema rõ ràng
       .load(bronze_path))
 
@@ -1697,3 +1715,78 @@ Source có gửi → eventstream có nhận → processor/filter có loại hế
 8. Cố tình dùng lại cùng một checkpoint cho hai query khác nhau để tận mắt thấy vì sao quy tắc "mỗi query một checkpoint" tồn tại.
 
 **Ngưỡng đạt:** vẽ lại được bốn loại window ở mục C từ trí nhớ, gõ lại được đoạn `foreachBatch` + `MERGE` ở mục D, và trả lời đúng ≥13/14 câu ở mục H.
+
+---
+
+# ⚡ CẬP NHẬT 05/11/2026 — STREAMING DATA
+
+## U1. Năm bullet chính thức hiện hành
+
+Choose an appropriate streaming engine · Process data by using **eventstreams** · Process data by using **Spark structured streaming** · Process data by using **KQL** · Create **windowing functions**.
+
+*Related topics (vẫn giữ trong file):* native tables vs OneLake shortcuts trong RTI, query acceleration.
+
+## U2. Chọn streaming engine — bảng một trang (cập nhật)
+
+| Tín hiệu | Engine |
+|---|---|
+| No-code, nhiều nguồn (Event Hubs, IoT Hub, CDC DB, Kafka, custom endpoint), lọc/gộp/join đơn giản, route nhiều đích | **Eventstream** |
+| Cần làm giàu event bằng **bảng tham chiếu Delta** trong Lakehouse | **Eventstream reference data enrichment** (Preview, 08/2026) — no-code hoặc SQL |
+| Logic phức tạp bằng code, MERGE vào Delta, stateful nâng cao, tái dùng code batch | **Spark Structured Streaming** (Runtime 2.0; Event Hubs qua **Kafka endpoint**) |
+| Độ trễ cực thấp trong Spark | **Real-time Mode** (Runtime 2.0+, output mode `update`, hỗ trợ source/sink hẹp) |
+| Truy vấn tương tác trên telemetry, time-series, dashboard real-time, transform lúc ingest | **Eventhouse + KQL** (update policy, materialized view) |
+| Đưa dữ liệu ra dashboard/hành động tự động khi vượt ngưỡng | **Activator** |
+
+## U3. Thay đổi RTI 08–09/2026 (Preview) — nhận diện
+
+| Tính năng | Ý nghĩa |
+|---|---|
+| **Reference data enrichment in Eventstream** | Join stream với bảng Delta tham chiếu trong Lakehouse |
+| **Eventstream custom connector** | Thêm nguồn streaming không có sẵn qua framework mở rộng |
+| **Large message support** (Eventstream & Eventhouse) | Ingest payload lớn hơn |
+| **Eventstream workspace Private Link** | Bảo mật streaming ở phạm vi workspace |
+| **Eventstream processing logs → Workspace monitoring** | Cảnh báo, lỗi, sự kiện phục hồi của xử lý stream đổ vào KQL database monitoring |
+| **Update policies on accelerated shortcuts** | Transform lúc ingest cho OneLake shortcut có query acceleration |
+| **Copy job ↔ Eventstream** | Eventstream làm nguồn/đích của Copy job |
+| **Mirroring change feed → Eventstream** | Thay đổi từ database mirror chảy vào Eventstream |
+
+## U4. Window — nhắc lại cú pháp ba engine (phải gõ được)
+
+```python
+# Spark: tumbling 5 phút, hopping 10 phút trượt 5 phút, session gap 10 phút
+from pyspark.sql.functions import window, session_window, count
+tumbling = df.withWatermark("EventTime", "10 minutes").groupBy(window("EventTime", "5 minutes"), "DeviceId").agg(count("*"))
+hopping  = df.withWatermark("EventTime", "10 minutes").groupBy(window("EventTime", "10 minutes", "5 minutes"), "DeviceId").agg(count("*"))
+session  = df.withWatermark("EventTime", "10 minutes").groupBy(session_window("EventTime", "10 minutes"), "DeviceId").agg(count("*"))
+```
+
+```kusto
+// KQL: tumbling 5 phút = bin(); hopping/sliding dùng make-series hoặc kết hợp range
+Telemetry
+| where Timestamp > ago(1h)
+| summarize Events = count(), AvgTemp = avg(Temperature) by DeviceId, bin(Timestamp, 5m)
+```
+
+```sql
+-- Eventstream SQL operator (cú pháp kiểu Stream Analytics)
+SELECT DeviceId, COUNT(*) AS Events, System.Timestamp() AS WindowEnd
+FROM [input-stream] TIMESTAMP BY EventTime
+GROUP BY DeviceId, TumblingWindow(minute, 5)
+```
+
+## U5. Câu hỏi tình huống cập nhật
+
+<details><summary><b>ST-U1.</b> Event từ IoT Hub chỉ có `DeviceId`; dashboard cần thêm `Factory` và `Line` lấy từ bảng Delta `dim_device` trong Lakehouse, yêu cầu no-code. Lựa chọn?</summary>
+
+**Eventstream reference data enrichment (Preview)** — join stream với `dim_device`. GA thay thế: đưa raw vào Eventhouse rồi join bằng KQL (hoặc dùng `lookup` tới bảng dimension trong Eventhouse) ở thời điểm truy vấn/update policy.
+</details>
+
+<details><summary><b>ST-U2.</b> Spark Structured Streaming đọc Event Hubs, workspace vừa chuyển sang Runtime 2.0. Ba thay đổi bắt buộc trong code?</summary>
+
+(1) `format("eventhubs")` → **`format("kafka")`** với `kafka.bootstrap.servers = <ns>.servicebus.windows.net:9093`, `SASL_SSL`, `PLAIN`, `username="$ConnectionString"`. (2) Parse payload từ cột **`value`** thay vì `body`. (3) **Checkpoint mới**, sink idempotent (vd. `foreachBatch` + MERGE có dedup).
+</details>
+
+<details><summary><b>ST-U3.</b> Cần biết khi nào xử lý Eventstream bị lỗi hoặc tự phục hồi, và truy vấn lịch sử bằng KQL. Bật gì?</summary>
+
+**Workspace monitoring** + **Eventstream processing logs (Preview)** — log đổ vào Monitoring KQL database của workspace; truy vấn bằng KQL, có thể đặt alert.
+</details>
